@@ -9,8 +9,36 @@ const MODEL = process.env.MODEL || "claude-opus-4-8";
 const MOCK = process.env.MOCK === "1";
 const hasKey = !!process.env.ANTHROPIC_API_KEY;
 const anthropic = hasKey ? new Anthropic() : null;
+const WEB_SEARCH = process.env.WEB_SEARCH !== "0"; // grounding on by default
 
-export const runtimeInfo = { model: MODEL, hasKey, mock: MOCK };
+// Credible-sources allowlist for web search (override via WEB_SEARCH_DOMAINS).
+const DEFAULT_DOMAINS = [
+  "sec.gov", "reuters.com", "wsj.com", "ft.com", "bloomberg.com", "cnbc.com",
+  "morningstar.com", "finance.yahoo.com", "marketwatch.com", "barrons.com",
+  "macrotrends.net", "investor.gov",
+];
+const SEARCH_DOMAINS = (process.env.WEB_SEARCH_DOMAINS || DEFAULT_DOMAINS.join(","))
+  .split(",").map((s) => s.trim()).filter(Boolean);
+
+export const runtimeInfo = { model: MODEL, hasKey, mock: MOCK, webSearch: WEB_SEARCH };
+
+// Research pass: let the model search credible sources for current facts about
+// the company relevant to the formula, then summarize a concise brief. Returns
+// "" on any failure so the main run continues ungrounded.
+async function researchBrief(payload) {
+  const varNames = payload.variables.map((v) => v.name).join(", ");
+  const prompt = `Search credible financial sources for CURRENT facts about ${payload.company || "the company"}${payload.ticker ? ` (${payload.ticker})` : ""} that are relevant to estimating these valuation inputs: ${varNames}. Focus on the most recent reported figures, near-term guidance, and any material recent developments. Then write a tight, factual brief (bullet points, with the figure and its period/date). Do not speculate; if something isn't found, omit it.`;
+
+  const tools = [{ type: "web_search_20260209", name: "web_search", max_uses: 5, allowed_domains: SEARCH_DOMAINS }];
+  let messages = [{ role: "user", content: prompt }];
+  let resp = await anthropic.messages.create({ model: MODEL, max_tokens: 2000, tools, messages });
+  let guard = 0;
+  while (resp.stop_reason === "pause_turn" && guard++ < 4) {
+    messages = [messages[0], { role: "assistant", content: resp.content }];
+    resp = await anthropic.messages.create({ model: MODEL, max_tokens: 2000, tools, messages });
+  }
+  return resp.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+}
 
 // Force a single tool call whose schema IS the scenario grid, so the model must
 // return one estimate + justification per input variable per scenario.
@@ -58,7 +86,12 @@ function ragBlock(passages) {
   return `\nRELEVANT PRINCIPLES FROM PETER LYNCH (for grounding — apply the ideas, don't quote at length):\n${body}\n`;
 }
 
-function buildPrompt(p, passages) {
+function webBlock(research) {
+  if (!research) return "";
+  return `\nCURRENT CONTEXT FROM CREDIBLE WEB SOURCES (use to anchor your median-relative adjustments; prefer these figures over guesses):\n${research}\n`;
+}
+
+function buildPrompt(p, passages, research) {
   const varLines = p.variables
     .map((v) => {
       const base = p.baseValues?.[v.id];
@@ -82,7 +115,7 @@ ${varLines}
 
 ALTERNATIVE SCENARIOS TO EVALUATE:
 ${scenarioLines}
-${ragBlock(passages)}
+${ragBlock(passages)}${webBlock(research)}
 For each scenario, provide your own estimate for EVERY input variable above, adjusting the median figures for that scenario's conditions and keeping units/magnitudes consistent. Then call submit_scenarios exactly once with all scenarios, including a short justification per variable.`;
 }
 
@@ -132,12 +165,22 @@ router.post("/run", requireAuth, async (req, res) => {
       console.warn("RAG retrieve failed (continuing without):", e.message);
     }
 
+    // Ground in current facts via web search (best-effort).
+    let research = "";
+    if (WEB_SEARCH) {
+      try {
+        research = await researchBrief(payload);
+      } catch (e) {
+        console.warn("Web search failed (continuing without):", e.message);
+      }
+    }
+
     const message = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 8000,
       tools: [submitTool],
       tool_choice: { type: "tool", name: "submit_scenarios" },
-      messages: [{ role: "user", content: buildPrompt(payload, passages) }],
+      messages: [{ role: "user", content: buildPrompt(payload, passages, research) }],
     });
 
     const toolUse = message.content.find((b) => b.type === "tool_use");

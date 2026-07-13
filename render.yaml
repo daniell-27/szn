@@ -18,3 +18,5 @@ services:
         sync: false # set in the Render dashboard (secret)
       - key: MONGODB_URI
         sync: false # your MongoDB Atlas connection string (secret)
+      - key: FMP_API_KEY
+        sync: false # Financial Modeling Prep key for company search + metrics (secret)

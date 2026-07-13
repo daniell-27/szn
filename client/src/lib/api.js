@@ -37,6 +37,10 @@ export const runScenarios = (payload) =>
 export const getFeedback = (payload) =>
   req("/api/feedback", { method: "POST", body: JSON.stringify(payload) });
 
+// ---- finance data (FMP) ----
+export const searchCompanies = (q) => req(`/api/finance/search?q=${encodeURIComponent(q)}`);
+export const getMetrics = (symbol) => req(`/api/finance/metrics?symbol=${encodeURIComponent(symbol)}`);
+
 export async function checkHealth() {
   try {
     return await req("/api/health");

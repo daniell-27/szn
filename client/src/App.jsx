@@ -3,6 +3,8 @@ import Sidebar from "./components/Sidebar.jsx";
 import FormulaBuilder from "./components/FormulaBuilder.jsx";
 import OutputView from "./components/OutputView.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
+import CompanySearch from "./components/CompanySearch.jsx";
+import MetricPicker from "./components/MetricPicker.jsx";
 import { makeDefaultModel } from "./lib/defaults.js";
 import { freeInputIds, modelToText, toRaw, UNITS } from "./lib/evaluate.js";
 import { uid } from "./lib/util.js";
@@ -33,6 +35,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [health, setHealth] = useState(null);
 
+  const [metrics, setMetrics] = useState([]); // current financials for the selected company
+  const [pickedMetric, setPickedMetric] = useState({}); // blockId -> metric label used
+
   const inputIds = useMemo(() => freeInputIds(model), [model.formula, model.auxFormulas]);
   const nameFor = (id) => model.blocks.find((b) => b.id === id)?.name ?? "?";
 
@@ -51,6 +56,16 @@ export default function App() {
     api.listModels().then(setSavedModels).catch(() => {});
     api.listRuns().then(setHistory).catch(() => {});
   }, [user]);
+
+  // ---- pull current financials whenever a company (ticker) is confirmed ----
+  useEffect(() => {
+    if (!health?.finance || !model.ticker) { setMetrics([]); return; }
+    let cancelled = false;
+    api.getMetrics(model.ticker)
+      .then((d) => { if (!cancelled) setMetrics(d.metrics || []); })
+      .catch(() => { if (!cancelled) setMetrics([]); });
+    return () => { cancelled = true; };
+  }, [model.ticker, health?.finance]);
 
   // ---- autosave edits made on the output page back to the server ----
   const saveTimer = useRef(null);
@@ -73,6 +88,7 @@ export default function App() {
     setResult(null);
     setActiveRunId(null);
     setError("");
+    setPickedMetric({});
     setView("build");
   }
 
@@ -116,6 +132,10 @@ export default function App() {
   // run
   async function onRun() {
     setError("");
+    if (health?.finance && !model.ticker) {
+      setError("Search for the company and click the matching result to confirm it first.");
+      return;
+    }
     if (!model.formula.output || model.formula.rhs.length === 0) {
       setError("Build a formula first: drop an output block on the left and blocks/operators on the right.");
       return;
@@ -226,14 +246,28 @@ export default function App() {
                   <span>Model name</span>
                   <input className="input" value={model.name} onChange={(e) => setModel({ ...model, name: e.target.value })} />
                 </label>
-                <label className="field">
-                  <span>Company</span>
-                  <input className="input" placeholder="e.g. Costco" value={model.company} onChange={(e) => setModel({ ...model, company: e.target.value })} />
-                </label>
-                <label className="field field-sm">
-                  <span>Ticker</span>
-                  <input className="input" placeholder="COST" value={model.ticker} onChange={(e) => setModel({ ...model, ticker: e.target.value })} />
-                </label>
+                {health?.finance ? (
+                  <div className="field">
+                    <span>Company <span className="req">*</span></span>
+                    <CompanySearch
+                      company={model.company}
+                      ticker={model.ticker}
+                      onSelect={({ name, symbol }) => { setModel({ ...model, company: name, ticker: symbol }); setPickedMetric({}); }}
+                      onClear={() => { setModel({ ...model, company: "", ticker: "" }); setPickedMetric({}); }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <label className="field">
+                      <span>Company</span>
+                      <input className="input" placeholder="e.g. Costco" value={model.company} onChange={(e) => setModel({ ...model, company: e.target.value })} />
+                    </label>
+                    <label className="field field-sm">
+                      <span>Ticker</span>
+                      <input className="input" placeholder="COST" value={model.ticker} onChange={(e) => setModel({ ...model, ticker: e.target.value })} />
+                    </label>
+                  </>
+                )}
               </div>
               <div className="tc-row tc-actions">
                 <label className="field">
@@ -269,7 +303,7 @@ export default function App() {
                     <label key={id} className="field">
                       <span>{nameFor(id)}</span>
                       <div className="input-with-unit">
-                        <input className="input" inputMode="decimal" placeholder="0" value={baseValues[id] ?? ""} onChange={(e) => setBaseValues({ ...baseValues, [id]: e.target.value })} />
+                        <input className="input" inputMode="decimal" placeholder="0" value={baseValues[id] ?? ""} onChange={(e) => { setBaseValues({ ...baseValues, [id]: e.target.value }); if (pickedMetric[id]) setPickedMetric({ ...pickedMetric, [id]: null }); }} />
                         <select
                           className="unit-select"
                           value={model.units?.[id] ?? 1}
@@ -277,7 +311,18 @@ export default function App() {
                         >
                           {UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
                         </select>
+                        {health?.finance && metrics.length > 0 && (
+                          <MetricPicker
+                            metrics={metrics}
+                            onPick={(m) => {
+                              const unit = model.units?.[id] || 1;
+                              setBaseValues({ ...baseValues, [id]: +(m.value / unit).toPrecision(6) });
+                              setPickedMetric({ ...pickedMetric, [id]: m.label });
+                            }}
+                          />
+                        )}
                       </div>
+                      {pickedMetric[id] && <span className="picked-metric">from {pickedMetric[id]}</span>}
                     </label>
                   ))}
                 </div>
