@@ -17,26 +17,35 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
   const toMongo = process.argv.includes("--mongo");
-  const chunksPath = path.join(__dirname, "chunks.json");
-  if (!fs.existsSync(chunksPath)) {
-    console.error("chunks.json not found — run extract.py first.");
-    process.exit(1);
-  }
-  const chunks = JSON.parse(fs.readFileSync(chunksPath, "utf8"));
-  console.log(`Embedding ${chunks.length} chunks (first run downloads the model)…`);
-
-  const vecs = await embedBatch(
-    chunks.map((c) => c.text),
-    (done, total) => process.stdout.write(`\r  ${done}/${total}`)
-  );
-  process.stdout.write("\n");
-
-  const records = chunks.map((c, i) => ({ source: c.source, idx: c.idx, text: c.text, vec: vecs[i] }));
-
-  // Always write the local file (dev convenience).
+  const uploadOnly = process.argv.includes("--upload-only");
   const filePath = path.join(__dirname, "lynch-index.json");
-  fs.writeFileSync(filePath, JSON.stringify(records));
-  console.log(`Wrote ${records.length} vectors to ${filePath}`);
+
+  let records;
+  if (uploadOnly) {
+    // Skip embedding — reuse the vectors already written to lynch-index.json.
+    if (!fs.existsSync(filePath)) {
+      console.error("--upload-only needs an existing lynch-index.json (run without it first).");
+      process.exit(1);
+    }
+    records = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    console.log(`Reusing ${records.length} vectors from ${filePath}`);
+  } else {
+    const chunksPath = path.join(__dirname, "chunks.json");
+    if (!fs.existsSync(chunksPath)) {
+      console.error("chunks.json not found — run extract.py first.");
+      process.exit(1);
+    }
+    const chunks = JSON.parse(fs.readFileSync(chunksPath, "utf8"));
+    console.log(`Embedding ${chunks.length} chunks (first run downloads the model)…`);
+    const vecs = await embedBatch(
+      chunks.map((c) => c.text),
+      (done, total) => process.stdout.write(`\r  ${done}/${total}`)
+    );
+    process.stdout.write("\n");
+    records = chunks.map((c, i) => ({ source: c.source, idx: c.idx, text: c.text, vec: vecs[i] }));
+    fs.writeFileSync(filePath, JSON.stringify(records));
+    console.log(`Wrote ${records.length} vectors to ${filePath}`);
+  }
 
   if (toMongo) {
     if (!process.env.MONGODB_URI) {
