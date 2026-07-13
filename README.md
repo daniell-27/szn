@@ -58,6 +58,28 @@ whole app — sign up, build a formula, run scenarios, see the output page — u
 in-memory database and canned AI estimates. Add a real `ANTHROPIC_API_KEY` and
 `MONGODB_URI`, and drop `MOCK=1`, for the real thing.
 
+## RAG: Peter Lynch grounding (one-time index build)
+
+The scenario reasoning and the "Model feedback on your reasoning" panel are grounded
+in *One Up on Wall Street* and *Beating the Street* via a small vector index of the
+books. The book text is **never committed** (it's copyrighted) — the index lives in
+your MongoDB. Build it once, locally, from your own PDFs:
+
+```bash
+cd server
+pip install pypdf                     # for text extraction
+python3 rag/extract.py \
+  "One Up on Wall Street=/path/to/one-up-on-wall-street.pdf" \
+  "Beating the Street=/path/to/beating-the-street.pdf"
+node rag/build-index.mjs --mongo      # embeds locally (free), uploads vectors to MONGODB_URI
+```
+
+The first run downloads a small embedding model (`all-MiniLM-L6-v2`, ~25 MB, no API key).
+The server reads the index from MongoDB at query time. Until you build it, the RAG
+features degrade gracefully (feedback still works, just without book grounding). For
+local dev without Mongo, `node rag/build-index.mjs` (no `--mongo`) writes a local
+`rag/lynch-index.json` the dev server picks up automatically.
+
 ## How the "exact same format" guarantee works
 
 The formula is evaluated by one function, `client/src/lib/evaluate.js`, for the

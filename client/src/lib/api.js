@@ -33,6 +33,10 @@ export const deleteRun = (id) => req(`/api/runs/${id}`, { method: "DELETE" });
 export const runScenarios = (payload) =>
   req("/api/run", { method: "POST", body: JSON.stringify(payload) });
 
+// ---- reasoning feedback (RAG-grounded) ----
+export const getFeedback = (payload) =>
+  req("/api/feedback", { method: "POST", body: JSON.stringify(payload) });
+
 export async function checkHealth() {
   try {
     return await req("/api/health");

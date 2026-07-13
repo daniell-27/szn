@@ -245,6 +245,20 @@ body {
 .dp-median { fill: var(--accent); }
 .dp-label-text { fill: var(--ink); font-size: 13px; font-family: inherit; font-weight: 600; }
 
+/* ---------- Reasoning feedback ---------- */
+.row-feedback td { background: var(--paper); padding: 0 12px; }
+.feedback-block { padding: 6px 0; }
+.feedback-toggle {
+  display: flex; align-items: center; gap: 8px; font-family: inherit; font-size: 13px;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--ink-soft);
+  background: none; border: none; cursor: pointer; padding: 6px 0;
+}
+.feedback-toggle:hover { color: var(--ink); }
+.feedback-body { padding: 4px 4px 12px; max-width: 760px; }
+.feedback-loading { font-style: italic; color: var(--ink-soft); font-size: 14px; }
+.feedback-text { white-space: pre-wrap; font-size: 15px; line-height: 1.55; color: var(--ink); }
+.feedback-sources { margin-top: 10px; font-size: 12px; font-style: italic; color: var(--ink-soft); }
+
 /* ---------- Sticky note (modal) ---------- */
 .sticky-icon { border: none; background: none; cursor: pointer; padding: 0; line-height: 1; color: var(--accent); display: inline-flex; }
 .sticky-icon:hover { color: var(--twine); }

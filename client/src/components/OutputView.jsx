@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import { resolveTyped, freeInputIds, formulaToText, formatNumber, UNITS } from "../lib/evaluate.js";
 import StickyNote from "./StickyNote.jsx";
 import DotPlot from "./DotPlot.jsx";
 import Icon from "./Icon.jsx";
+import * as api from "../lib/api.js";
 
 const unitLabel = (mult) => UNITS.find((u) => u.value === mult)?.label || "";
 
@@ -25,6 +26,35 @@ export default function OutputView({ model, baseValues, setBaseValues, result, s
   }
 
   const scenarioOut = (s) => resolveTyped(model, s.values);
+
+  // ---- RAG-grounded feedback on the analyst's reasoning ----
+  const [fbOpen, setFbOpen] = useState(false);
+  const [fbLoading, setFbLoading] = useState(false);
+  const [fbError, setFbError] = useState("");
+  const feedback = result.feedback;
+  const sources = result.feedbackSources || [];
+
+  async function toggleFeedback() {
+    const next = !fbOpen;
+    setFbOpen(next);
+    if (next && !feedback && !fbLoading) {
+      setFbLoading(true);
+      setFbError("");
+      try {
+        const data = await api.getFeedback({
+          company: model.company,
+          ticker: model.ticker,
+          thesis: model.thesis,
+          scenarios: result.scenarios.map((s) => ({ name: s.name, description: s.description || "" })),
+        });
+        setResult({ ...result, feedback: data.feedback, feedbackSources: data.sources });
+      } catch (e) {
+        setFbError(e.message);
+      } finally {
+        setFbLoading(false);
+      }
+    }
+  }
 
   const dotPoints = [
     { name: "Median", value: baseOut.value, isMedian: true },
@@ -78,6 +108,27 @@ export default function OutputView({ model, baseValues, setBaseValues, result, s
                   <input className="cell-input" value={baseValues[id] ?? ""} onChange={(e) => editBase(id, e.target.value)} />
                 </td>
               ))}
+            </tr>
+
+            <tr className="row-feedback">
+              <td colSpan={3 + inputIds.length}>
+                <div className="feedback-block">
+                  <button className="feedback-toggle" onClick={toggleFeedback}>
+                    <Icon name={fbOpen ? "minus" : "plus"} />
+                    <span>Model feedback on your reasoning</span>
+                  </button>
+                  {fbOpen && (
+                    <div className="feedback-body">
+                      {fbLoading && <div className="feedback-loading">Reviewing your thesis against Peter Lynch's principles…</div>}
+                      {fbError && <div className="banner banner-error">{fbError}</div>}
+                      {feedback && <div className="feedback-text">{feedback}</div>}
+                      {feedback && sources.length > 0 && (
+                        <div className="feedback-sources">Grounded in: {sources.join(", ")}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </td>
             </tr>
 
             {result.scenarios.map((s, idx) => {

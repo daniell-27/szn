@@ -1,6 +1,7 @@
 import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "../middleware/auth.js";
+import { retrieve } from "../rag/store.js";
 
 const router = Router();
 
@@ -49,7 +50,15 @@ const submitTool = {
   },
 };
 
-function buildPrompt(p) {
+function ragBlock(passages) {
+  if (!passages || !passages.length) return "";
+  const body = passages
+    .map((h, i) => `[${i + 1}] (${h.source}) ${h.text}`)
+    .join("\n\n");
+  return `\nRELEVANT PRINCIPLES FROM PETER LYNCH (for grounding — apply the ideas, don't quote at length):\n${body}\n`;
+}
+
+function buildPrompt(p, passages) {
   const varLines = p.variables
     .map((v) => {
       const base = p.baseValues?.[v.id];
@@ -73,7 +82,7 @@ ${varLines}
 
 ALTERNATIVE SCENARIOS TO EVALUATE:
 ${scenarioLines}
-
+${ragBlock(passages)}
 For each scenario, provide your own estimate for EVERY input variable above, adjusting the median figures for that scenario's conditions and keeping units/magnitudes consistent. Then call submit_scenarios exactly once with all scenarios, including a short justification per variable.`;
 }
 
@@ -114,12 +123,21 @@ router.post("/run", requireAuth, async (req, res) => {
         error: "No Anthropic API key configured. Add ANTHROPIC_API_KEY to server/.env (or set MOCK=1 for demo mode).",
       });
 
+    // Ground the reasoning in relevant Lynch passages (best-effort).
+    let passages = [];
+    try {
+      const q = [payload.thesis, ...payload.scenarios.map((s) => `${s.name} ${s.description}`)].join(" ");
+      passages = await retrieve(q, 6);
+    } catch (e) {
+      console.warn("RAG retrieve failed (continuing without):", e.message);
+    }
+
     const message = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 8000,
       tools: [submitTool],
       tool_choice: { type: "tool", name: "submit_scenarios" },
-      messages: [{ role: "user", content: buildPrompt(payload) }],
+      messages: [{ role: "user", content: buildPrompt(payload, passages) }],
     });
 
     const toolUse = message.content.find((b) => b.type === "tool_use");

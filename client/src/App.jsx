@@ -137,7 +137,7 @@ export default function App() {
         scenarios: named.map((s) => ({ name: s.name.trim() || "Unnamed scenario", description: s.description })),
       });
       // The model reasons in raw numbers; convert back into each variable's unit for display.
-      const scenarios = data.scenarios.map((s) => {
+      const scenarios = data.scenarios.map((s, i) => {
         const values = {};
         for (const id of ids) {
           const v = s.values?.[id];
@@ -145,7 +145,7 @@ export default function App() {
             values[id] = +(Number(v) / (units[id] || 1)).toPrecision(6);
           }
         }
-        return { name: s.name, values, notes: s.notes };
+        return { name: s.name, values, notes: s.notes, description: named[i]?.description || "" };
       });
       const runResult = { scenarios };
       setResult(runResult);

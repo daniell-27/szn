@@ -22,3 +22,7 @@ npm-debug.log*
 
 # mongodb-memory-server cached binaries (dev fallback)
 .cache/
+
+# RAG index — contains copyrighted book text; lives in the DB / locally, never in the public repo
+server/rag/chunks.json
+server/rag/lynch-index.json
