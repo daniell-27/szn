@@ -1,4 +1,5 @@
 import React from "react";
+import Icon from "./Icon.jsx";
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -21,7 +22,7 @@ export default function Sidebar({ user, history, activeRunId, onLoad, onDelete, 
         </div>
       </div>
 
-      <button className="btn btn-block" onClick={onNew}>+ New analysis</button>
+      <button className="btn btn-block btn-icon" onClick={onNew}><Icon name="plus" /> New analysis</button>
 
       <div className="sidebar-label">Run history</div>
       <div className="history-list">
@@ -46,7 +47,7 @@ export default function Sidebar({ user, history, activeRunId, onLoad, onDelete, 
               title="Delete run"
               onClick={(e) => { e.stopPropagation(); onDelete(run.id); }}
             >
-              ×
+              <Icon name="close" />
             </button>
           </div>
         ))}
@@ -54,7 +55,7 @@ export default function Sidebar({ user, history, activeRunId, onLoad, onDelete, 
 
       <div className="sidebar-foot">
         <div className="account-email" title={user?.email}>{user?.email}</div>
-        <button className="btn btn-sm" onClick={onLogout}>Log out</button>
+        <button className="btn btn-sm btn-icon" onClick={onLogout}><Icon name="logout" /> Log out</button>
       </div>
     </aside>
   );

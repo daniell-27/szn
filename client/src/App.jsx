@@ -4,9 +4,12 @@ import FormulaBuilder from "./components/FormulaBuilder.jsx";
 import OutputView from "./components/OutputView.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import { makeDefaultModel } from "./lib/defaults.js";
-import { inputVariableIds, formulaToText } from "./lib/evaluate.js";
+import { freeInputIds, modelToText, toRaw, UNITS } from "./lib/evaluate.js";
 import { uid } from "./lib/util.js";
+import Icon from "./components/Icon.jsx";
 import * as api from "./lib/api.js";
+
+const withDefaults = (m) => ({ auxFormulas: [], units: {}, ...m });
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -30,7 +33,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [health, setHealth] = useState(null);
 
-  const inputIds = useMemo(() => inputVariableIds(model.formula), [model.formula]);
+  const inputIds = useMemo(() => freeInputIds(model), [model.formula, model.auxFormulas]);
   const nameFor = (id) => model.blocks.find((b) => b.id === id)?.name ?? "?";
 
   // ---- initial auth check ----
@@ -89,7 +92,7 @@ export default function App() {
   function onImportModel(id) {
     const m = savedModels.find((x) => x.id === id);
     if (!m) return;
-    setModel({ ...m });
+    setModel(withDefaults(m));
     setBaseValues({});
     setResult(null);
     setActiveRunId(null);
@@ -124,14 +127,27 @@ export default function App() {
     }
     setLoading(true);
     try {
+      const ids = freeInputIds(model);
+      const units = model.units || {};
       const data = await api.runScenarios({
         company: model.company, ticker: model.ticker, thesis: model.thesis,
-        formulaText: formulaToText(model.formula, model.blocks),
-        variables: inputIds.map((id) => ({ id, name: nameFor(id) })),
-        baseValues,
+        formulaText: modelToText(model),
+        variables: ids.map((id) => ({ id, name: nameFor(id) })),
+        baseValues: toRaw(baseValues, units, ids), // send true magnitudes
         scenarios: named.map((s) => ({ name: s.name.trim() || "Unnamed scenario", description: s.description })),
       });
-      const runResult = { scenarios: data.scenarios };
+      // The model reasons in raw numbers; convert back into each variable's unit for display.
+      const scenarios = data.scenarios.map((s) => {
+        const values = {};
+        for (const id of ids) {
+          const v = s.values?.[id];
+          if (v !== undefined && v !== null && !Number.isNaN(Number(v))) {
+            values[id] = +(Number(v) / (units[id] || 1)).toPrecision(6);
+          }
+        }
+        return { name: s.name, values, notes: s.notes };
+      });
+      const runResult = { scenarios };
       setResult(runResult);
 
       const rec = await api.saveRun({
@@ -150,7 +166,7 @@ export default function App() {
 
   // history
   function loadRun(run) {
-    setModel(run.model);
+    setModel(withDefaults(run.model));
     setBaseValues(run.baseValues || {});
     setResult(run.result);
     setActiveRunId(run.id);
@@ -230,9 +246,9 @@ export default function App() {
                   </select>
                 </label>
                 {model.id && (
-                  <button className="btn" title="Delete this saved model" onClick={() => onDeleteSavedModel(model.id)}>🗑</button>
+                  <button className="btn btn-icon-only" title="Delete this saved model" onClick={() => onDeleteSavedModel(model.id)}><Icon name="trash" /></button>
                 )}
-                <button className="btn" onClick={onSaveModel}>💾 Save model</button>
+                <button className="btn btn-icon" onClick={onSaveModel}><Icon name="save" /> Save model</button>
               </div>
             </div>
 
@@ -252,7 +268,16 @@ export default function App() {
                   {inputIds.map((id) => (
                     <label key={id} className="field">
                       <span>{nameFor(id)}</span>
-                      <input className="input" inputMode="decimal" placeholder="0" value={baseValues[id] ?? ""} onChange={(e) => setBaseValues({ ...baseValues, [id]: e.target.value })} />
+                      <div className="input-with-unit">
+                        <input className="input" inputMode="decimal" placeholder="0" value={baseValues[id] ?? ""} onChange={(e) => setBaseValues({ ...baseValues, [id]: e.target.value })} />
+                        <select
+                          className="unit-select"
+                          value={model.units?.[id] ?? 1}
+                          onChange={(e) => setModel({ ...model, units: { ...(model.units || {}), [id]: Number(e.target.value) } })}
+                        >
+                          {UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                        </select>
+                      </div>
                     </label>
                   ))}
                 </div>
@@ -267,9 +292,9 @@ export default function App() {
                     <div className="scenario-row-top">
                       <input className="input scenario-name" placeholder="Scenario name" value={s.name} onChange={(e) => updateScenario(s.id, { name: e.target.value })} />
                       <div className="scenario-row-btns">
-                        <button className="icon-btn add" title="Add a scenario below" onClick={() => addScenarioAfter(i)}>+</button>
+                        <button className="icon-btn add" title="Add a scenario below" onClick={() => addScenarioAfter(i)}><Icon name="plus" /></button>
                         {scenarios.length > 1 && (
-                          <button className="icon-btn" title="Remove scenario" onClick={() => removeScenario(s.id)}>×</button>
+                          <button className="icon-btn" title="Remove scenario" onClick={() => removeScenario(s.id)}><Icon name="close" /></button>
                         )}
                       </div>
                     </div>
@@ -282,8 +307,8 @@ export default function App() {
             {error && <div className="banner banner-error">{error}</div>}
 
             <div className="run-bar">
-              <button className="btn btn-run" onClick={onRun} disabled={loading}>
-                {loading ? "Running…" : "Run ▸"}
+              <button className="btn btn-run btn-icon" onClick={onRun} disabled={loading}>
+                <Icon name="run" size={15} /> {loading ? "Running…" : "Run"}
               </button>
             </div>
           </div>

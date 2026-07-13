@@ -26,6 +26,8 @@ export function makeDefaultModel() {
         { id: uid(), type: "variable", blockId: shares.id },
       ],
     },
+    auxFormulas: [],
+    units: { [fcf.id]: 1e9, [shares.id]: 1e6 },
   };
 }
 
@@ -39,6 +41,8 @@ export function makeEmptyModel() {
     thesis: "",
     blocks: [val],
     formula: { output: val.id, rhs: [] },
+    auxFormulas: [],
+    units: {},
   };
 }
 
