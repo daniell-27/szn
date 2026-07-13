@@ -9,6 +9,7 @@ export default function CompanySearch({ company, ticker, onSelect, onClear }) {
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const timer = useRef(null);
   const boxRef = useRef(null);
 
@@ -28,12 +29,15 @@ export default function CompanySearch({ company, ticker, onSelect, onClear }) {
     clearTimeout(timer.current);
     if (!v.trim()) { setResults([]); return; }
     setLoading(true);
+    setError("");
     timer.current = setTimeout(async () => {
       try {
         const rows = await api.searchCompanies(v.trim());
         setResults(rows);
-      } catch {
+        setError("");
+      } catch (e) {
         setResults([]);
+        setError(e.message || "Search failed.");
       } finally {
         setLoading(false);
       }
@@ -74,7 +78,8 @@ export default function CompanySearch({ company, ticker, onSelect, onClear }) {
       {open && (query.trim() || loading) && (
         <div className="company-dropdown">
           {loading && <div className="company-loading">Searching…</div>}
-          {!loading && results.length === 0 && <div className="company-empty">No matches.</div>}
+          {!loading && error && <div className="company-error">{error}</div>}
+          {!loading && !error && results.length === 0 && <div className="company-empty">No matches.</div>}
           {results.map((r) => (
             <button key={`${r.symbol}-${r.exchange}`} className="company-option" onClick={() => choose(r)}>
               <span className="company-option-name">{r.name}</span>
