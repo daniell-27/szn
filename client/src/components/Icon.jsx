@@ -40,6 +40,16 @@ const PATHS = {
     </>
   ),
   back: <path d="M19 12H5M12 19l-7-7 7-7" />,
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="9" cy="18" r="1" />
+      <circle cx="15" cy="6" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="15" cy="18" r="1" />
+    </>
+  ),
   logout: (
     <>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

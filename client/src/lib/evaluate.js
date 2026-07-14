@@ -222,6 +222,29 @@ export function formatNumber(n) {
   return `${sign}${abs.toPrecision(3)}`;
 }
 
+// Parse a typed fragment (operators, numbers, function names) into partial
+// tokens (no ids). Variables can't be typed (names have spaces) — drag those.
+export function parseTyped(str) {
+  const out = [];
+  const re = /\s*(\d+\.?\d*|\.\d+|[A-Za-z]+|[+\-*/^%()])/g;
+  let m;
+  let ok = true;
+  let consumed = 0;
+  while ((m = re.exec(str))) {
+    consumed += m[0].length;
+    const tok = m[1];
+    if (/^[\d.]/.test(tok)) out.push({ type: "const", value: Number(tok) });
+    else if (/^[+\-*/^%()]$/.test(tok)) out.push({ type: "op", op: tok });
+    else {
+      const up = tok.toUpperCase();
+      if (FUNCTIONS[up]) out.push({ type: "func", name: up });
+      else ok = false;
+    }
+  }
+  if (consumed < str.replace(/\s/g, "").length) ok = false;
+  return { tokens: out, ok };
+}
+
 export const UNITS = [
   { label: "—", value: 1 },
   { label: "Thousand", value: 1e3 },

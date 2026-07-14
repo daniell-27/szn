@@ -12,7 +12,15 @@ import { uid } from "./lib/util.js";
 import Icon from "./components/Icon.jsx";
 import * as api from "./lib/api.js";
 
-const withDefaults = (m) => ({ auxFormulas: [], units: {}, ...m });
+const withDefaults = (m) => ({ auxFormulas: [], units: {}, folders: [], inputOrder: [], blocks: [], ...m });
+
+// Display order for median inputs: honor inputOrder, then any new inputs.
+function orderInputs(inputIds, inputOrder) {
+  const set = new Set(inputIds);
+  const ordered = (inputOrder || []).filter((id) => set.has(id));
+  const seen = new Set(ordered);
+  return [...ordered, ...inputIds.filter((id) => !seen.has(id))];
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -38,6 +46,7 @@ export default function App() {
 
   const [metrics, setMetrics] = useState([]); // current financials for the selected company
   const [pickedMetric, setPickedMetric] = useState({}); // blockId -> metric label used
+  const [medDrag, setMedDrag] = useState(null); // index being dragged in the median list
 
   const inputIds = useMemo(() => freeInputIds(model), [model.formula, model.auxFormulas]);
   const nameFor = (id) => model.blocks.find((b) => b.id === id)?.name ?? "?";
@@ -93,11 +102,15 @@ export default function App() {
     setView("build");
   }
 
+  // A saved model is a reusable TEMPLATE: blocks, folders, formulas, units —
+  // not the company/thesis/values of a particular application.
   async function onSaveModel() {
     try {
       const rec = await api.saveModel({
-        id: model.id, name: model.name, blocks: model.blocks, formula: model.formula,
-        company: model.company, ticker: model.ticker, thesis: model.thesis,
+        id: model.id, name: model.name,
+        blocks: model.blocks, folders: model.folders,
+        formula: model.formula, auxFormulas: model.auxFormulas,
+        units: model.units, inputOrder: model.inputOrder,
       });
       setModel((m) => ({ ...m, id: rec.id }));
       setSavedModels(await api.listModels());
@@ -106,13 +119,18 @@ export default function App() {
     }
   }
 
+  // Importing loads the template structure but keeps the current company/thesis.
   function onImportModel(id) {
     const m = savedModels.find((x) => x.id === id);
     if (!m) return;
-    setModel(withDefaults(m));
-    setBaseValues({});
-    setResult(null);
-    setActiveRunId(null);
+    setModel((cur) => ({
+      ...cur,
+      id: m.id, name: m.name,
+      blocks: m.blocks || [], folders: m.folders || [],
+      formula: m.formula || { output: null, rhs: [] },
+      auxFormulas: m.auxFormulas || [], units: m.units || {},
+      inputOrder: m.inputOrder || [],
+    }));
     setView("build");
   }
 
@@ -306,8 +324,31 @@ export default function App() {
                 <div className="empty">Add variable blocks to the formula to see their input boxes here.</div>
               ) : (
                 <div className="median-inputs">
-                  {inputIds.map((id) => (
-                    <label key={id} className="field">
+                  {orderInputs(inputIds, model.inputOrder).map((id, i, arr) => (
+                    <div
+                      key={id}
+                      className={"median-field" + (medDrag !== null && medDrag !== i ? "" : "")}
+                      onDragOver={(e) => { if (medDrag !== null) e.preventDefault(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (medDrag === null || medDrag === i) return;
+                        const next = [...arr];
+                        const [moved] = next.splice(medDrag, 1);
+                        next.splice(i, 0, moved);
+                        setModel({ ...model, inputOrder: next });
+                        setMedDrag(null);
+                      }}
+                    >
+                      <span
+                        className="median-grip"
+                        draggable
+                        onDragStart={() => setMedDrag(i)}
+                        onDragEnd={() => setMedDrag(null)}
+                        title="Drag to reorder"
+                      >
+                        <Icon name="grip" size={14} />
+                      </span>
+                    <label className="field">
                       <span>{nameFor(id)}</span>
                       <div className="input-with-unit">
                         <input className="input" inputMode="decimal" placeholder="0" value={baseValues[id] ?? ""} onChange={(e) => { setBaseValues({ ...baseValues, [id]: e.target.value }); if (pickedMetric[id]) setPickedMetric({ ...pickedMetric, [id]: null }); }} />
@@ -331,6 +372,7 @@ export default function App() {
                       </div>
                       {pickedMetric[id] && <span className="picked-metric">from {pickedMetric[id]}</span>}
                     </label>
+                    </div>
                   ))}
                 </div>
               )}
