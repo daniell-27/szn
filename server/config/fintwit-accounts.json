@@ -1,10 +1,11 @@
 {
   "_comment": "Your curated list of trusted Fintwit accounts (X/Twitter handles, no @). Fermi shows the ones who've recently posted about the company you're valuing. Edit this list, or override it with the FINTWIT_ACCOUNTS env var (comma-separated).",
   "accounts": [
-    "unusual_whales",
-    "Morningstar",
-    "themotleyfool",
-    "GuyAdami",
-    "awealthofcs"
+    "GavinSBaker",
+    "RihardJarc",
+    "michaeljburry",
+    "CliffordAsness",
+    "htsfhickey",
+    "SamanthaMcLemor"
   ]
 }
