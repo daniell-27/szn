@@ -76,7 +76,7 @@ sequenceDiagram
         DB-->>API: passages (book titles)
         API->>AI: web_search tool (credible-domain allowlist)
         AI-->>API: current-facts brief + result URLs
-        API->>SEC: last 2 quarterly earnings press releases (8-K EX-99.1)
+        API->>SEC: last 4 quarterly earnings press releases (8-K EX-99.1)
         SEC-->>API: release text + filing URL (read skeptically)
         Note over API: also folds in analyst-uploaded context docs, then builds a numbered source list
     end

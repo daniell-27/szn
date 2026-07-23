@@ -1,7 +1,7 @@
 // SEC EDGAR client. Free, no API key — SEC only requires a descriptive
 // User-Agent with a contact address (set SEC_USER_AGENT). Used for two things:
 //   1) Primary-source fundamentals (XBRL company facts) for /finance/metrics.
-//   2) The last two quarterly earnings press releases, fed into the scenario
+//   2) The last four quarterly earnings press releases, fed into the scenario
 //      run as extra grounding (see routes/scenario.js).
 //
 // SEC only has FILINGS, not market data — so price, market cap, P/E and
@@ -174,7 +174,7 @@ async function secText(url) {
 // filings reporting item 2.02 ("Results of Operations"), then pull the EX-99.1
 // exhibit (the press release itself) from each filing's directory. Best-effort:
 // returns [] on any failure so the caller can continue ungrounded.
-export async function earningsReleases(symbol, n = 2, maxCharsEach = 3500) {
+export async function earningsReleases(symbol, n = 4, maxCharsEach = 3500) {
   try {
     const id = await cikForTicker(symbol);
     if (!id) return [];
