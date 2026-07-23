@@ -53,7 +53,7 @@ function fromClause(accounts) {
   return `(${accounts.map((a) => `from:${a}`).join(" OR ")})`;
 }
 
-const sinceDate = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+const sinceUnix = (days) => Math.floor((Date.now() - days * 86400000) / 1000);
 
 // ---- X recent search (7-day window) ----
 async function fetchRecent(accounts, symbol, company) {
@@ -79,7 +79,7 @@ async function fetchRecent(accounts, symbol, company) {
 
 // ---- third-party historical search (up to LOOKBACK_DAYS) ----
 async function fetchArchive(accounts, symbol, company) {
-  const query = `${fromClause(accounts)}${mentionClause(symbol, company)} -filter:retweets since:${sinceDate(LOOKBACK_DAYS)}`;
+  const query = `${fromClause(accounts)}${mentionClause(symbol, company)} -filter:retweets since_time:${sinceUnix(LOOKBACK_DAYS)}`;
   const url = new URL(ARCHIVE_URL);
   url.searchParams.set("query", query);
   url.searchParams.set("queryType", "Latest");
