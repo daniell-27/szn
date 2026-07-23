@@ -1,7 +1,10 @@
 import mongoose from "mongoose";
 
-// A reusable valuation model: the named blocks + the formula, plus the
-// company/thesis context. Flexible sub-shapes are stored as Mixed.
+// A saved valuation model. Now a full snapshot of the build page — the named
+// variables + formula, plus company/thesis context AND the in-progress median
+// estimates and scenarios — so "Save model" preserves everything on the page,
+// even before a run. `schemaVersion` drives client-side migrations. `blocks`
+// is kept only to read pre-rename documents. Flexible sub-shapes are Mixed.
 const savedModelSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -9,10 +12,16 @@ const savedModelSchema = new mongoose.Schema(
     company: { type: String, default: "" },
     ticker: { type: String, default: "" },
     thesis: { type: String, default: "" },
-    blocks: { type: mongoose.Schema.Types.Mixed, default: [] },
+    variables: { type: mongoose.Schema.Types.Mixed, default: [] },
+    blocks: { type: mongoose.Schema.Types.Mixed }, // legacy (pre-rename); read-only
+    folders: { type: mongoose.Schema.Types.Mixed, default: [] },
     formula: { type: mongoose.Schema.Types.Mixed, default: {} },
     auxFormulas: { type: mongoose.Schema.Types.Mixed, default: [] },
     units: { type: mongoose.Schema.Types.Mixed, default: {} },
+    inputOrder: { type: mongoose.Schema.Types.Mixed, default: [] },
+    baseValues: { type: mongoose.Schema.Types.Mixed, default: {} },
+    scenarios: { type: mongoose.Schema.Types.Mixed, default: [] },
+    schemaVersion: { type: Number, default: 1 },
   },
   { timestamps: true }
 );

@@ -3,8 +3,8 @@
 // identical "format" for every column — which is the whole point.
 //
 // A model now has a MAIN formula plus optional AUXILIARY formulas. Each auxiliary
-// formula defines one of the main formula's input blocks in terms of other
-// (leaf) blocks. "Free" inputs are the leaf blocks the user/AI actually supply.
+// formula defines one of the main formula's input variables in terms of other
+// (leaf) variables. "Free" inputs are the leaf variables the user/AI supply.
 
 const PRECEDENCE = { "+": 1, "-": 1, "*": 2, "/": 2, "%": 2, "^": 3 };
 const RIGHT_ASSOC = { "^": true };
@@ -20,32 +20,32 @@ export const FUNCTIONS = {
   ROUND: (x) => Math.round(x),
 };
 
-const nameOf = (id, blocks) => blocks.find((b) => b.id === id)?.name ?? "?";
+const nameOf = (id, variables) => variables.find((b) => b.id === id)?.name ?? "?";
 
-function tokenText(t, blocks) {
-  if (t.type === "variable") return nameOf(t.blockId, blocks);
+function tokenText(t, variables) {
+  if (t.type === "variable") return nameOf(t.variableId, variables);
   if (t.type === "const") return String(t.value);
   if (t.type === "func") return t.name;
   return OP_SYM[t.op] || t.op;
 }
 
 // A single formula's right-hand side as text, e.g. "Free Cash Flow × Future Multiple".
-export function rhsToText(rhs, blocks) {
-  return (rhs || []).map((t) => tokenText(t, blocks)).join(" ");
+export function rhsToText(rhs, variables) {
+  return (rhs || []).map((t) => tokenText(t, variables)).join(" ");
 }
 
 // The main formula as "Output = expression".
-export function formulaToText(formula, blocks) {
-  const out = formula.output ? nameOf(formula.output, blocks) : "Result";
-  return `${out} = ${rhsToText(formula.rhs, blocks) || "…"}`;
+export function formulaToText(formula, variables) {
+  const out = formula.output ? nameOf(formula.output, variables) : "Result";
+  return `${out} = ${rhsToText(formula.rhs, variables) || "…"}`;
 }
 
 // Full multi-line description including auxiliary definitions (for the AI prompt).
 export function modelToText(model) {
-  const lines = [formulaToText(model.formula, model.blocks)];
+  const lines = [formulaToText(model.formula, model.variables)];
   for (const f of model.auxFormulas || []) {
     if (f.output && (f.rhs || []).length) {
-      lines.push(`  where ${nameOf(f.output, model.blocks)} = ${rhsToText(f.rhs, model.blocks)}`);
+      lines.push(`  where ${nameOf(f.output, model.variables)} = ${rhsToText(f.rhs, model.variables)}`);
     }
   }
   return lines.join("\n");
@@ -55,7 +55,7 @@ export function auxOutputIds(model) {
   return (model.auxFormulas || []).map((f) => f.output).filter(Boolean);
 }
 
-// The blocks the user/AI must supply values for: every variable used anywhere
+// The variables the user/AI must supply values for: every variable used anywhere
 // that isn't the main output and isn't defined by an auxiliary formula.
 export function freeInputIds(model) {
   const auxOut = new Set(auxOutputIds(model));
@@ -64,7 +64,7 @@ export function freeInputIds(model) {
   const consider = (rhs) => {
     for (const t of rhs || []) {
       if (t.type === "variable") {
-        const b = t.blockId;
+        const b = t.variableId;
         if (b !== mainOut && !auxOut.has(b) && !ids.includes(b)) ids.push(b);
       }
     }
@@ -133,7 +133,7 @@ export function evaluateFormula(formula, values) {
     if (t.type === "const") {
       stack.push(Number(t.value));
     } else if (t.type === "variable") {
-      const raw = values[t.blockId];
+      const raw = values[t.variableId];
       const n = typeof raw === "number" ? raw : parseFloat(raw);
       if (raw === undefined || raw === null || raw === "" || Number.isNaN(n)) {
         return { value: null, error: "Missing input" };

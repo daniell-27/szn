@@ -24,8 +24,16 @@ router.get("/models", wrap(async (req, res) => {
 }));
 
 router.post("/models", wrap(async (req, res) => {
-  const { id, name, company, ticker, thesis, blocks, formula, auxFormulas, units } = req.body || {};
-  const fields = { name, company, ticker, thesis, blocks, formula, auxFormulas, units };
+  const b = req.body || {};
+  const { id, name, company, ticker, thesis, variables, blocks, folders, formula, auxFormulas, units, inputOrder, baseValues, scenarios, schemaVersion } = b;
+  // Full-page snapshot; accept legacy `blocks` as a fallback for `variables`.
+  const fields = {
+    name, company, ticker, thesis,
+    variables: variables ?? blocks ?? [],
+    folders, formula, auxFormulas, units, inputOrder, baseValues, scenarios, schemaVersion,
+  };
+  // Don't overwrite stored values with undefined when a field is omitted.
+  for (const k of Object.keys(fields)) if (fields[k] === undefined) delete fields[k];
   let doc;
   if (id && validId(id)) {
     doc = await SavedModel.findOneAndUpdate({ _id: id, userId: req.userId }, { $set: fields }, { new: true });

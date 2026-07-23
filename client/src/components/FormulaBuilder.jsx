@@ -12,11 +12,11 @@ export default function FormulaBuilder({ model, setModel }) {
   const [newName, setNewName] = useState("");
   const [auxOpen, setAuxOpen] = useState((model.auxFormulas || []).length > 0);
 
-  const blocks = model.blocks || [];
+  const variables = model.variables || [];
   const folders = model.folders || [];
   const aux = model.auxFormulas || [];
   const derived = new Set(auxOutputIds(model));
-  const nameFor = (id) => blocks.find((b) => b.id === id)?.name ?? "?";
+  const nameFor = (id) => variables.find((b) => b.id === id)?.name ?? "?";
 
   // ---------- immutable helpers ----------
   const getRhs = (tgt, m = model) =>
@@ -32,7 +32,7 @@ export default function FormulaBuilder({ model, setModel }) {
   };
   const parseDrag = (e) => { try { return JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return null; } };
   const tokenFromPayload = (d) =>
-    d.kind === "block" ? { id: uid(), type: "variable", blockId: d.blockId }
+    d.kind === "variable" ? { id: uid(), type: "variable", variableId: d.variableId }
       : d.kind === "op" ? { id: uid(), type: "op", op: d.op }
       : d.kind === "func" ? { id: uid(), type: "func", name: d.name }
       : null;
@@ -66,56 +66,56 @@ export default function FormulaBuilder({ model, setModel }) {
     setModel((prev) => withRhs(prev, from, getRhs(from, prev).filter((t) => t.id !== tokenId)));
   }
 
-  // ---------- blocks ----------
-  function createBlock() {
+  // ---------- variables ----------
+  function createVariable() {
     const name = newName.trim(); if (!name) return;
-    setModel({ ...model, blocks: [...blocks, { id: uid(), name, folderId: null }] });
+    setModel({ ...model, variables: [...variables, { id: uid(), name, folderId: null }] });
     setNewName(""); setCreating(false);
   }
-  function deleteBlock(blockId) {
+  function deleteVariable(variableId) {
     setModel((prev) => {
-      const strip = (rhs) => rhs.filter((t) => !(t.type === "variable" && t.blockId === blockId));
-      const units = { ...prev.units }; delete units[blockId];
+      const strip = (rhs) => rhs.filter((t) => !(t.type === "variable" && t.variableId === variableId));
+      const units = { ...prev.units }; delete units[variableId];
       return {
         ...prev,
-        blocks: prev.blocks.filter((b) => b.id !== blockId),
-        formula: { output: prev.formula.output === blockId ? null : prev.formula.output, rhs: strip(prev.formula.rhs) },
-        auxFormulas: prev.auxFormulas.map((f) => ({ ...f, output: f.output === blockId ? null : f.output, rhs: strip(f.rhs) })),
+        variables: prev.variables.filter((b) => b.id !== variableId),
+        formula: { output: prev.formula.output === variableId ? null : prev.formula.output, rhs: strip(prev.formula.rhs) },
+        auxFormulas: prev.auxFormulas.map((f) => ({ ...f, output: f.output === variableId ? null : f.output, rhs: strip(f.rhs) })),
         units,
-        inputOrder: (prev.inputOrder || []).filter((id) => id !== blockId),
+        inputOrder: (prev.inputOrder || []).filter((id) => id !== variableId),
       };
     });
   }
-  const moveBlockToFolder = (blockId, folderId) =>
-    setModel({ ...model, blocks: blocks.map((b) => (b.id === blockId ? { ...b, folderId } : b)) });
+  const moveVariableToFolder = (variableId, folderId) =>
+    setModel({ ...model, variables: variables.map((b) => (b.id === variableId ? { ...b, folderId } : b)) });
 
   // ---------- folders ----------
   const addFolder = () => setModel({ ...model, folders: [...folders, { id: uid(), name: "New folder" }] });
   const renameFolder = (id, name) => setModel({ ...model, folders: folders.map((f) => (f.id === id ? { ...f, name } : f)) });
   const deleteFolder = (id) =>
-    setModel({ ...model, folders: folders.filter((f) => f.id !== id), blocks: blocks.map((b) => (b.folderId === id ? { ...b, folderId: null } : b)) });
+    setModel({ ...model, folders: folders.filter((f) => f.id !== id), variables: variables.map((b) => (b.folderId === id ? { ...b, folderId: null } : b)) });
 
   // ---------- aux ----------
   const updateAux = (auxId, fn) => setModel({ ...model, auxFormulas: aux.map((f) => (f.id === auxId ? fn(f) : f)) });
   const setOutput = (formula) => setModel({ ...model, formula });
 
   // ---------- render pieces ----------
-  const BlockChip = ({ b }) => (
-    <span className={"block block-var chip" + (derived.has(b.id) ? " block-derived" : "")} draggable onDragStart={startDrag({ kind: "block", blockId: b.id })}>
+  const VariableChip = ({ b }) => (
+    <span className={"block block-variable chip" + (derived.has(b.id) ? " block-derived" : "")} draggable onDragStart={startDrag({ kind: "variable", variableId: b.id })}>
       {b.name}
-      <button className="chip-x" title="Delete block" onClick={() => deleteBlock(b.id)}><Icon name="close" size={12} /></button>
+      <button className="chip-x" title="Delete variable" onClick={() => deleteVariable(b.id)}><Icon name="close" size={12} /></button>
     </span>
   );
 
   const FolderGroup = ({ folder }) => {
-    const list = blocks.filter((b) => (folder ? b.folderId === folder.id : !b.folderId));
+    const list = variables.filter((b) => (folder ? b.folderId === folder.id : !b.folderId));
     const key = folder ? "fld-" + folder.id : "ungrouped";
     return (
       <div
         className={"folder" + (over === key ? " drag-over" : "")}
         onDragOver={(e) => { e.preventDefault(); setOver(key); }}
         onDragLeave={() => setOver((k) => (k === key ? null : k))}
-        onDrop={(e) => { e.preventDefault(); setOver(null); const d = parseDrag(e); if (d?.kind === "block") moveBlockToFolder(d.blockId, folder ? folder.id : null); }}
+        onDrop={(e) => { e.preventDefault(); setOver(null); const d = parseDrag(e); if (d?.kind === "variable") moveVariableToFolder(d.variableId, folder ? folder.id : null); }}
       >
         <div className="folder-head">
           {folder ? (
@@ -129,21 +129,22 @@ export default function FormulaBuilder({ model, setModel }) {
           )}
         </div>
         <div className="folder-blocks">
-          {list.length === 0 && <span className="folder-empty">drop blocks here</span>}
-          {list.map((b) => <BlockChip key={b.id} b={b} />)}
+          {list.length === 0 && <span className="folder-empty">drop variables here</span>}
+          {list.map((b) => <VariableChip key={b.id} b={b} />)}
         </div>
       </div>
     );
   };
 
-  // A gap drop-target between tokens
+  // A gap drop-target between tokens (for precise insertion). Stops propagation
+  // so the surrounding drop-anywhere editor doesn't also handle the drop.
   const Gap = ({ tgt, index }) => {
     const key = `${tgt}:${index}`;
     return (
       <span
         className={"tok-gap" + (over === key ? " gap-over" : "")}
-        onDragOver={(e) => { e.preventDefault(); setOver(key); }}
-        onDragLeave={() => setOver((k) => (k === key ? null : k))}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOver(key); }}
+        onDragLeave={(e) => { e.stopPropagation(); setOver((k) => (k === key ? null : k)); }}
         onDrop={(e) => dropAtGap(tgt, index, e)}
       />
     );
@@ -151,13 +152,13 @@ export default function FormulaBuilder({ model, setModel }) {
 
   const TokenChip = ({ t, tgt }) => (
     <span
-      className={"token " + (t.type === "variable" ? "token-var" + (derived.has(t.blockId) ? " token-derived" : "") : t.type === "const" ? "token-const" : t.type === "func" ? "token-func" : "token-op")}
+      className={"token " + (t.type === "variable" ? "token-variable" + (derived.has(t.variableId) ? " token-derived" : "") : t.type === "const" ? "token-const" : t.type === "func" ? "token-func" : "token-op")}
       draggable
       onDragStart={startDrag({ kind: "token", from: tgt, tokenId: t.id })}
       onClick={() => removeTokenFrom(tgt, t.id)}
       title="Drag to move, or click to remove"
     >
-      {t.type === "variable" ? nameFor(t.blockId) : t.type === "const" ? t.value : t.type === "func" ? t.name : OP_SYMBOL[t.op] || t.op}
+      {t.type === "variable" ? nameFor(t.variableId) : t.type === "const" ? t.value : t.type === "func" ? t.name : OP_SYMBOL[t.op] || t.op}
     </span>
   );
 
@@ -183,19 +184,30 @@ export default function FormulaBuilder({ model, setModel }) {
     );
   }
 
-  const RhsEditor = ({ tgt, rhs }) => (
-    <div className="rhs-slot rhs-editor">
-      {rhs.length === 0 && <span className="slot-hint">drag blocks/operators, or type — insert anywhere</span>}
-      <Gap tgt={tgt} index={0} />
-      {rhs.map((t, i) => (
-        <React.Fragment key={t.id}>
-          <TokenChip t={t} tgt={tgt} />
-          <Gap tgt={tgt} index={i + 1} />
-        </React.Fragment>
-      ))}
-      <TypedEntry tgt={tgt} />
-    </div>
-  );
+  // The whole RHS area is a drop target: dropping a variable/operator anywhere in
+  // it appends to the end, so users don't have to hit a tiny gap. Gaps still
+  // allow precise insertion between existing tokens.
+  const RhsEditor = ({ tgt, rhs }) => {
+    const key = `rhs:${tgt}`;
+    return (
+      <div
+        className={"rhs-slot rhs-editor" + (over === key ? " drag-over" : "")}
+        onDragOver={(e) => { e.preventDefault(); setOver(key); }}
+        onDragLeave={() => setOver((k) => (k === key ? null : k))}
+        onDrop={(e) => dropAtGap(tgt, rhs.length, e)}
+      >
+        {rhs.length === 0 && <span className="slot-hint">drag variables / operators anywhere here, or type</span>}
+        <Gap tgt={tgt} index={0} />
+        {rhs.map((t, i) => (
+          <React.Fragment key={t.id}>
+            <TokenChip t={t} tgt={tgt} />
+            <Gap tgt={tgt} index={i + 1} />
+          </React.Fragment>
+        ))}
+        <TypedEntry tgt={tgt} />
+      </div>
+    );
+  };
 
   const OutputSlot = ({ value, onSet, onClear }) => {
     const key = "out-" + value;
@@ -204,10 +216,10 @@ export default function FormulaBuilder({ model, setModel }) {
         className={"drop-slot output-slot" + (over === key ? " drag-over" : "")}
         onDragOver={(e) => { e.preventDefault(); setOver(key); }}
         onDragLeave={() => setOver((k) => (k === key ? null : k))}
-        onDrop={(e) => { e.preventDefault(); setOver(null); const d = parseDrag(e); if (d?.kind === "block") onSet(d.blockId); }}
+        onDrop={(e) => { e.preventDefault(); setOver(null); const d = parseDrag(e); if (d?.kind === "variable") onSet(d.variableId); }}
       >
         {value ? (
-          <span className={"token token-var" + (onClear ? " token-output" : " token-derived")} onClick={onClear} title="Click to clear">{nameFor(value)}</span>
+          <span className={"token token-variable" + (onClear ? " token-output" : " token-derived")} onClick={onClear} title="Click to clear">{nameFor(value)}</span>
         ) : (
           <span className="slot-hint">drop output</span>
         )}
@@ -217,8 +229,8 @@ export default function FormulaBuilder({ model, setModel }) {
 
   return (
     <div className="card">
-      <div className="card-title">Blocks</div>
-      {/* palette: blocks are a drop target for removing formula tokens */}
+      <div className="card-title">Variables</div>
+      {/* palette: variables are a drop target for removing formula tokens */}
       <div
         className="palette"
         onDragOver={(e) => e.preventDefault()}
@@ -242,18 +254,18 @@ export default function FormulaBuilder({ model, setModel }) {
         <div className="palette-controls">
           {creating ? (
             <div className="add-block">
-              <input className="input input-sm" autoFocus placeholder="Block name…" value={newName}
+              <input className="input input-sm" autoFocus placeholder="Variable name…" value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") createBlock(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
+                onKeyDown={(e) => { if (e.key === "Enter") createVariable(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
                 onBlur={() => { if (!newName.trim()) setCreating(false); }} />
-              <button className="btn btn-sm" onMouseDown={(e) => e.preventDefault()} onClick={createBlock}>Add</button>
+              <button className="btn btn-sm" onMouseDown={(e) => e.preventDefault()} onClick={createVariable}>Add</button>
             </div>
           ) : (
-            <button className="btn btn-sm btn-icon" onClick={() => setCreating(true)}><Icon name="plus" /> New block</button>
+            <button className="btn btn-sm btn-icon" onClick={() => setCreating(true)}><Icon name="plus" /> New variable</button>
           )}
           <button className="btn btn-sm btn-icon" onClick={addFolder}><Icon name="plus" /> New folder</button>
         </div>
-        <div className="hint">Drag a block onto a folder to sort it. Drag a formula token back here (or click it) to remove it.</div>
+        <div className="hint">Drag a variable onto a folder to sort it. Drag a formula token back here (or click it) to remove it.</div>
       </div>
 
       <div className="card-title" style={{ marginTop: 18 }}>Main formula</div>
@@ -262,7 +274,7 @@ export default function FormulaBuilder({ model, setModel }) {
         <div className="equals">=</div>
         <RhsEditor tgt="main" rhs={model.formula.rhs || []} />
       </div>
-      <div className="hint">Drop into the gaps to insert anywhere. Type numbers, operators (+ − × ÷ ^ %), or functions (SQRT, LN, LOG, EXP, ABS, ROUND).</div>
+      <div className="hint">Drop variables/operators anywhere in the formula bar. Type numbers, operators (+ − × ÷ ^ %), or functions (SQRT, LN, LOG, EXP, ABS, ROUND).</div>
 
       <div className="aux-panel">
         <button className="aux-toggle" onClick={() => setAuxOpen((o) => !o)}>
@@ -270,7 +282,7 @@ export default function FormulaBuilder({ model, setModel }) {
         </button>
         {auxOpen && (
           <div className="aux-body">
-            <div className="aux-hint">Define a main-formula input from other blocks. That input becomes computed — you'll fill its sub-variables instead.</div>
+            <div className="aux-hint">Define a main-formula input from other variables. That input becomes computed — you'll fill its sub-variables instead.</div>
             {aux.map((f) => (
               <div key={f.id} className="formula-bar formula-bar-aux">
                 <OutputSlot value={f.output} onSet={(id) => updateAux(f.id, (x) => ({ ...x, output: id }))} onClear={() => updateAux(f.id, (x) => ({ ...x, output: null }))} />

@@ -17,6 +17,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 5001;
 
+// A per-deploy identifier so the client can detect when a new version has been
+// deployed and offer a non-disruptive reload. Prefer the git commit (stable per
+// deploy on Render); fall back to process start time.
+const VERSION = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || String(Date.now());
+
 // Production serves the client from the same origin, so no CORS is needed.
 // In dev the Vite proxy is also same-origin, but allow localhost for flexibility.
 if (process.env.NODE_ENV !== "production") {
@@ -29,7 +34,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, ...runtimeInfo, finance: financeEnabled, fintwit: fintwitEnabled });
+  res.json({ ok: true, version: VERSION, ...runtimeInfo, finance: financeEnabled, fintwit: fintwitEnabled });
 });
 
 app.use("/api/auth", authRoutes);

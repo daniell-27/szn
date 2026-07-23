@@ -26,6 +26,7 @@ const PATHS = {
     </>
   ),
   run: <path d="M6 4l14 8-14 8V4z" />,
+  output: <path d="M5 12h14M13 6l6 6-6 6" />,
   chevron: <path d="M6 9l6 6 6-6" />,
   search: (
     <>

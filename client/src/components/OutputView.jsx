@@ -10,17 +10,17 @@ const unitLabel = (mult) => UNITS.find((u) => u.value === mult)?.label || "";
 export default function OutputView({ model, baseValues, setBaseValues, result, setResult, onBack }) {
   const inputIds = freeInputIds(model);
   const units = model.units || {};
-  const nameFor = (id) => model.blocks.find((b) => b.id === id)?.name ?? "?";
+  const nameFor = (id) => (model.variables || []).find((b) => b.id === id)?.name ?? "?";
   const outName = model.formula.output ? nameFor(model.formula.output) : "Result";
 
   const baseOut = resolveTyped(model, baseValues);
 
-  function editBase(blockId, v) {
-    setBaseValues({ ...baseValues, [blockId]: v });
+  function editBase(id, v) {
+    setBaseValues({ ...baseValues, [id]: v });
   }
-  function editScenario(idx, blockId, v) {
+  function editScenario(idx, id, v) {
     const scenarios = result.scenarios.map((s, i) =>
-      i === idx ? { ...s, values: { ...s.values, [blockId]: v } } : s
+      i === idx ? { ...s, values: { ...s.values, [id]: v } } : s
     );
     setResult({ ...result, scenarios });
   }
@@ -74,7 +74,7 @@ export default function OutputView({ model, baseValues, setBaseValues, result, s
     <div className="output-view">
       <div className="output-head">
         <button className="btn btn-icon" onClick={onBack}><Icon name="back" /> Back to inputs</button>
-        <div className="formula-readout">{formulaToText(model.formula, model.blocks)}</div>
+        <div className="formula-readout">{formulaToText(model.formula, model.variables)}</div>
       </div>
 
       {low !== null && (

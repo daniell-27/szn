@@ -1,6 +1,7 @@
 import { uid } from "./util.js";
+import { CURRENT_SCHEMA } from "./migrate.js";
 
-// Models now start empty — the analyst creates their own blocks and folders.
+// Models now start empty — the analyst creates their own variables and folders.
 export function makeDefaultModel() {
   return {
     id: null,
@@ -8,12 +9,13 @@ export function makeDefaultModel() {
     company: "",
     ticker: "",
     thesis: "",
-    blocks: [],
+    variables: [],
     folders: [],
     formula: { output: null, rhs: [] },
     auxFormulas: [],
     units: {},
     inputOrder: [],
+    schemaVersion: CURRENT_SCHEMA,
   };
 }
 

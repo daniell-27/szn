@@ -7,12 +7,29 @@ import CompanySearch from "./components/CompanySearch.jsx";
 import MetricPicker from "./components/MetricPicker.jsx";
 import ScenarioSources from "./components/ScenarioSources.jsx";
 import { makeDefaultModel } from "./lib/defaults.js";
+import { migrateModel } from "./lib/migrate.js";
 import { freeInputIds, modelToText, toRaw, UNITS } from "./lib/evaluate.js";
 import { uid } from "./lib/util.js";
 import Icon from "./components/Icon.jsx";
 import * as api from "./lib/api.js";
 
-const withDefaults = (m) => ({ auxFormulas: [], units: {}, folders: [], inputOrder: [], blocks: [], ...m });
+// Fill defaults AND migrate old saved shapes (e.g. blocks -> variables) so a
+// patched bug never re-enters through a stale saved model.
+const withDefaults = (m) => ({ auxFormulas: [], units: {}, folders: [], inputOrder: [], variables: [], ...migrateModel(m) });
+
+const DRAFT_KEY = (userId) => `szn:draft:${userId || "anon"}`;
+const defaultScenarios = () => [
+  { id: uid(), name: "Bull case", description: "" },
+  { id: uid(), name: "Bear case", description: "" },
+];
+
+// Signature of everything a run depends on — used to tell whether the inputs
+// have changed since the last run (drives the Re-run button state).
+const sigOf = (m, bv, sc) =>
+  JSON.stringify({
+    f: m.formula, v: m.variables, a: m.auxFormulas, u: m.units, t: m.thesis,
+    b: bv, s: (sc || []).map((s) => ({ n: s.name, d: s.description })),
+  });
 
 // Display order for median inputs: honor inputOrder, then any new inputs.
 function orderInputs(inputIds, inputOrder) {
@@ -28,14 +45,15 @@ export default function App() {
 
   const [model, setModel] = useState(makeDefaultModel);
   const [baseValues, setBaseValues] = useState({});
-  const [scenarios, setScenarios] = useState([
-    { id: uid(), name: "Bull case", description: "" },
-    { id: uid(), name: "Bear case", description: "" },
-  ]);
+  const [scenarios, setScenarios] = useState(defaultScenarios);
 
   const [view, setView] = useState("build"); // "build" | "output"
   const [result, setResult] = useState(null);
   const [activeRunId, setActiveRunId] = useState(null);
+  const [runSig, setRunSig] = useState(null); // input signature at the last run
+  const [confirmOutput, setConfirmOutput] = useState(false); // "view stale output?" modal
+  const [updateAvailable, setUpdateAvailable] = useState(false); // new deploy detected
+  const draftReady = useRef(false); // gate draft autosave until after restore
 
   const [savedModels, setSavedModels] = useState([]);
   const [history, setHistory] = useState([]);
@@ -49,7 +67,12 @@ export default function App() {
   const [medDrag, setMedDrag] = useState(null); // index being dragged in the median list
 
   const inputIds = useMemo(() => freeInputIds(model), [model.formula, model.auxFormulas]);
-  const nameFor = (id) => model.blocks.find((b) => b.id === id)?.name ?? "?";
+  const nameFor = (id) => (model.variables || []).find((b) => b.id === id)?.name ?? "?";
+
+  // Have the inputs changed since the last run? Drives the Re-run button colour
+  // and the "view stale output?" confirmation.
+  const inputSig = sigOf(model, baseValues, scenarios);
+  const inputsDirty = !!result && runSig !== null && inputSig !== runSig;
 
   // ---- initial auth check ----
   useEffect(() => {
@@ -65,7 +88,50 @@ export default function App() {
     if (!user) return;
     api.listModels().then(setSavedModels).catch(() => {});
     api.listRuns().then(setHistory).catch(() => {});
+    // Restore an in-progress draft so a reload (e.g. after a new deploy) never
+    // clears the user's un-run work.
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY(user.id));
+      const d = raw ? JSON.parse(raw) : null;
+      if (d && d.model) {
+        setModel(withDefaults(d.model));
+        setBaseValues(d.baseValues || {});
+        setScenarios(d.scenarios?.length ? d.scenarios : defaultScenarios());
+        setResult(d.result || null);
+        setActiveRunId(d.activeRunId || null);
+        setRunSig(d.runSig ?? null);
+        setView(d.view === "output" && d.result ? "output" : "build");
+      }
+    } catch { /* ignore malformed draft */ }
+    draftReady.current = true;
   }, [user]);
+
+  // ---- autosave the whole in-progress page to a local draft (debounced) ----
+  useEffect(() => {
+    if (!user || !draftReady.current) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          DRAFT_KEY(user.id),
+          JSON.stringify({ model, baseValues, scenarios, view, result, activeRunId, runSig, savedAt: Date.now() })
+        );
+      } catch { /* quota / disabled — ignore */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [user, model, baseValues, scenarios, view, result, activeRunId, runSig]);
+
+  // ---- detect a new deployment; offer a non-disruptive reload ----
+  useEffect(() => {
+    if (!health?.version) return;
+    const seen = health.version;
+    const check = async () => {
+      const h = await api.checkHealth();
+      if (h?.version && h.version !== seen) setUpdateAvailable(true);
+    };
+    window.addEventListener("focus", check);
+    const iv = setInterval(check, 5 * 60 * 1000);
+    return () => { window.removeEventListener("focus", check); clearInterval(iv); };
+  }, [health?.version]);
 
   // ---- pull current financials whenever a company (ticker) is confirmed ----
   useEffect(() => {
@@ -94,23 +160,28 @@ export default function App() {
   function newAnalysis() {
     setModel(makeDefaultModel());
     setBaseValues({});
-    setScenarios([{ id: uid(), name: "Bull case", description: "" }, { id: uid(), name: "Bear case", description: "" }]);
+    setScenarios(defaultScenarios());
     setResult(null);
     setActiveRunId(null);
+    setRunSig(null);
     setError("");
     setPickedMetric({});
     setView("build");
   }
 
-  // A saved model is a reusable TEMPLATE: blocks, folders, formulas, units —
-  // not the company/thesis/values of a particular application.
+  // "Save model" now snapshots EVERYTHING on the page (variables, formula,
+  // company/thesis, median estimates, and scenarios) — even before a run — so
+  // nothing on the page is lost.
   async function onSaveModel() {
     try {
       const rec = await api.saveModel({
         id: model.id, name: model.name,
-        blocks: model.blocks, folders: model.folders,
+        company: model.company, ticker: model.ticker, thesis: model.thesis,
+        variables: model.variables, folders: model.folders,
         formula: model.formula, auxFormulas: model.auxFormulas,
         units: model.units, inputOrder: model.inputOrder,
+        baseValues, scenarios,
+        schemaVersion: model.schemaVersion,
       });
       setModel((m) => ({ ...m, id: rec.id }));
       setSavedModels(await api.listModels());
@@ -119,18 +190,26 @@ export default function App() {
     }
   }
 
-  // Importing loads the template structure but keeps the current company/thesis.
+  // Importing restores the full saved snapshot: structure + estimates + scenarios.
   function onImportModel(id) {
-    const m = savedModels.find((x) => x.id === id);
-    if (!m) return;
+    const raw = savedModels.find((x) => x.id === id);
+    if (!raw) return;
+    const m = migrateModel(raw);
     setModel((cur) => ({
       ...cur,
       id: m.id, name: m.name,
-      blocks: m.blocks || [], folders: m.folders || [],
+      company: m.company ?? cur.company, ticker: m.ticker ?? cur.ticker,
+      thesis: m.thesis ?? cur.thesis,
+      variables: m.variables || [], folders: m.folders || [],
       formula: m.formula || { output: null, rhs: [] },
       auxFormulas: m.auxFormulas || [], units: m.units || {},
       inputOrder: m.inputOrder || [],
+      schemaVersion: m.schemaVersion,
     }));
+    if (m.baseValues) setBaseValues(m.baseValues);
+    if (m.scenarios?.length) setScenarios(m.scenarios.map((s) => ({ id: s.id || uid(), ...s })));
+    setResult(null);
+    setRunSig(null);
     setView("build");
   }
 
@@ -162,7 +241,7 @@ export default function App() {
       return;
     }
     if (!model.formula.output || model.formula.rhs.length === 0) {
-      setError("Build a formula first: drop an output block on the left and blocks/operators on the right.");
+      setError("Build a formula first: drop an output variable on the left and variables/operators on the right.");
       return;
     }
     const named = scenarios.filter((s) => s.name.trim() || s.description.trim());
@@ -182,7 +261,7 @@ export default function App() {
         scenarios: named.map((s) => ({ name: s.name.trim() || "Unnamed scenario", description: s.description })),
       });
       // The model reasons in raw numbers; convert back into each variable's unit for display.
-      const scenarios = data.scenarios.map((s, i) => {
+      const outScenarios = data.scenarios.map((s, i) => {
         const values = {};
         for (const id of ids) {
           const v = s.values?.[id];
@@ -192,8 +271,9 @@ export default function App() {
         }
         return { name: s.name, values, notes: s.notes, description: named[i]?.description || "" };
       });
-      const runResult = { scenarios };
+      const runResult = { scenarios: outScenarios };
       setResult(runResult);
+      setRunSig(sigOf(model, baseValues, scenarios)); // snapshot inputs at run time
 
       const rec = await api.saveRun({
         modelName: model.name, company: model.company, ticker: model.ticker,
@@ -209,12 +289,29 @@ export default function App() {
     }
   }
 
+  // After the first run, the primary button just re-opens the output (no re-run,
+  // no cost). If the inputs changed since the run, viewing the (stale) output is
+  // confirmed first, since those edits aren't reflected until a re-run.
+  function onOutput() {
+    if (inputsDirty) { setConfirmOutput(true); return; }
+    setView("output");
+  }
+  function confirmViewOutput() {
+    setConfirmOutput(false);
+    setView("output");
+  }
+
   // history
   function loadRun(run) {
-    setModel(withDefaults(run.model));
-    setBaseValues(run.baseValues || {});
+    const m = withDefaults(run.model);
+    const bv = run.baseValues || {};
+    const sc = (run.result?.scenarios || []).map((s) => ({ id: uid(), name: s.name, description: s.description || "" }));
+    setModel(m);
+    setBaseValues(bv);
+    setScenarios(sc.length ? sc : defaultScenarios());
     setResult(run.result);
     setActiveRunId(run.id);
+    setRunSig(sigOf(m, bv, sc)); // a freshly loaded run is "clean"
     setView("output");
   }
   async function onDeleteRun(id) {
@@ -260,6 +357,13 @@ export default function App() {
         {health && health.mock && (
           <div className="banner banner-warn">
             Demo mode — scenarios use canned estimates. Add an <code>ANTHROPIC_API_KEY</code> and drop <code>MOCK=1</code> for real reasoning.
+          </div>
+        )}
+        {updateAvailable && (
+          <div className="banner banner-update">
+            A new version of SZN is available.{" "}
+            <button className="link-btn" onClick={() => window.location.reload()}>Reload</button>{" "}
+            to update — your inputs are saved and will be restored.
           </div>
         )}
 
@@ -321,7 +425,7 @@ export default function App() {
             <div className="card">
               <div className="card-title">Your median estimates</div>
               {inputIds.length === 0 ? (
-                <div className="empty">Add variable blocks to the formula to see their input boxes here.</div>
+                <div className="empty">Add variables to the formula to see their input boxes here.</div>
               ) : (
                 <div className="median-inputs">
                   {orderInputs(inputIds, model.inputOrder).map((id, i, arr) => (
@@ -408,9 +512,25 @@ export default function App() {
             {error && <div className="banner banner-error">{error}</div>}
 
             <div className="run-bar">
-              <button className="btn btn-run btn-icon" onClick={onRun} disabled={loading}>
-                <Icon name="run" size={15} /> {loading ? "Running…" : "Run"}
-              </button>
+              {!result ? (
+                <button className="btn btn-run btn-icon" onClick={onRun} disabled={loading}>
+                  <Icon name="run" size={15} /> {loading ? "Running…" : "Run"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    className={"btn btn-rerun btn-icon" + (inputsDirty ? " dirty" : "")}
+                    onClick={onRun}
+                    disabled={loading}
+                    title={inputsDirty ? "Inputs changed — re-run to update the output" : "Re-run (inputs unchanged)"}
+                  >
+                    <Icon name="run" size={15} /> {loading ? "Running…" : "Re-run"}
+                  </button>
+                  <button className="btn btn-run btn-icon" onClick={onOutput} disabled={loading}>
+                    Output <Icon name="output" size={15} />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ) : (
@@ -424,6 +544,22 @@ export default function App() {
               onBack={() => setView("build")}
             />
           )
+        )}
+
+        {confirmOutput && (
+          <div className="modal-overlay" onClick={() => setConfirmOutput(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-title">View output?</div>
+              <div className="modal-body">
+                Your input changes haven't been re-run, so they won't be reflected in the output and
+                won't be saved. View the last run's output anyway?
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={() => setConfirmOutput(false)}>Cancel</button>
+                <button className="btn btn-run" onClick={confirmViewOutput}>View output</button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

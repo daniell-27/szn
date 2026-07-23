@@ -8,7 +8,7 @@ there. GitHub renders the Mermaid block below inline.
 > finance, Fintwit, or output flow changes, update this diagram in the same
 > commit.
 
-_Last updated: 2026-07-23_
+_Last updated: 2026-07-23 (rev 2 — versioning/draft, save-everything, output/re-run buttons)_
 
 ```mermaid
 sequenceDiagram
@@ -22,8 +22,19 @@ sequenceDiagram
     participant AI as Anthropic (Claude)
     participant DB as MongoDB
 
+    Note over U,DB: 0 — SESSION START
+    FE->>FE: restore local draft (migrateModel: schemaVersion up-to-date, blocks->variables)
+    FE->>API: GET /api/health (version)
+    API-->>FE: { version, flags } — later change ⇒ "new version" banner (reload keeps draft)
+
     Note over U,DB: 1 — INPUT PHASE
     U->>FE: Build formula, enter median estimates, thesis, scenarios
+    FE->>FE: autosave whole page to local draft (debounced)
+    opt Save model
+        U->>FE: "Save model" (full-page snapshot, even un-run)
+        FE->>API: POST /api/models { variables, formula, units, thesis, baseValues, scenarios, schemaVersion }
+        API->>DB: upsert SavedModel
+    end
     FE->>FMP: GET /finance/search (company typeahead)
     FMP-->>FE: matches
     FE->>API: GET /finance/metrics?symbol
@@ -65,7 +76,8 @@ sequenceDiagram
     API-->>FE: scenarios [{name, values, notes}]
 
     Note over U,DB: 3 — OUTPUT and POST-OUTPUT
-    FE->>FE: set result, view = output, render OutputView (dot plot, grid, notes)
+    FE->>FE: set result + runSig (input snapshot), view = output, render OutputView
+    Note over FE: After the first run the inputs page shows Re-run and Output. Output re-opens the result with no re-run (no cost). Re-run goes green only when inputs changed since runSig. Opening Output while dirty asks to confirm.
     opt Edit a cell (median base or scenario input)
         U->>FE: change value
         FE->>FE: resolveTyped() recompute locally (no API call)
@@ -100,3 +112,6 @@ sequenceDiagram
 - **Fintwit reach:** X recent search is capped at 7 days on every plan; a
   third-party archive provider (`FINTWIT_ARCHIVE_KEY`) extends it to ~180 days.
 - **Recalculation** on cell edits is local (`resolveTyped`) — no API round-trip.
+- **Schema versioning** — every saved model/run carries `schemaVersion`; `migrateModel` upgrades old data on load (e.g. `blocks`→`variables`), so a patched bug can't re-enter through a stale saved model.
+- **Draft + deploy resilience** — the whole in-progress page is autosaved to a local draft and restored on load, so a reload (including after a new deploy) never clears un-run work; a version change surfaces a non-disruptive reload banner.
+- **Save model** now stores the full page snapshot (structure + median estimates + scenarios), not just the template.
