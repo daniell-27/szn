@@ -222,11 +222,11 @@ router.post("/run", requireAuth, async (req, res) => {
       }
     }
 
-    // Ground in the last two quarterly earnings press releases (SEC, best-effort).
+    // Ground in the last four quarterly earnings press releases (SEC, best-effort).
     let releases = [];
     if (payload.ticker) {
       try {
-        releases = await earningsReleases(payload.ticker, 2);
+        releases = await earningsReleases(payload.ticker, 4);
       } catch (e) {
         console.warn("Earnings-release fetch failed (continuing without):", e.message);
       }
