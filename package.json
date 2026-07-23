@@ -1,8 +1,8 @@
 {
-  "name": "fermi",
+  "name": "szn",
   "version": "1.0.0",
   "private": true,
-  "description": "Fermi — MERN scenario-valuation app (root build/start for deployment).",
+  "description": "SZN — MERN scenario-valuation app (root build/start for deployment).",
   "scripts": {
     "build": "npm --prefix client install --include=dev && npm --prefix client run build && npm --prefix server install --omit=dev",
     "start": "npm --prefix server start"

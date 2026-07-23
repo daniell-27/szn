@@ -26,8 +26,8 @@ export default function AuthScreen({ onAuthed }) {
   return (
     <div className="auth-screen">
       <form className="auth-card" onSubmit={submit}>
-        <img src="/fermi.jpg" alt="Enrico Fermi" className="auth-logo" />
-        <div className="auth-brand">Fermi</div>
+        <div className="auth-logo logo-mark logo-mark-lg" aria-hidden="true">szn<span className="logo-dot">.</span></div>
+        <div className="auth-brand">SZN</div>
         <div className="auth-sub">back-of-the-envelope valuations</div>
 
         <div className="auth-tabs">

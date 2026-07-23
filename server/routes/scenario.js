@@ -2,6 +2,7 @@ import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "../middleware/auth.js";
 import { retrieve } from "../rag/store.js";
+import { earningsReleases } from "../lib/sec.js";
 
 const router = Router();
 
@@ -91,7 +92,17 @@ function webBlock(research) {
   return `\nCURRENT CONTEXT FROM CREDIBLE WEB SOURCES (use to anchor your median-relative adjustments; prefer these figures over guesses):\n${research}\n`;
 }
 
-function buildPrompt(p, passages, research) {
+function earningsBlock(releases) {
+  if (!releases || !releases.length) return "";
+  const body = releases
+    .map((r, i) => `[Earnings press release ${i + 1} — filed ${r.date}]\n${r.text}`)
+    .join("\n\n");
+  return `\nRECENT QUARTERLY EARNINGS PRESS RELEASES (primary source, from SEC 8-K filings). Mine these for the latest hard figures (revenue, margins, guidance, segment trends, share count) and use them to quantify the input estimates.
+IMPORTANT — READ THESE SKEPTICALLY: these are management-authored and will skew optimistic (rosy framing, non-GAAP emphasis, cherry-picked highlights, soft guidance). Treat the raw numbers as facts but DISCOUNT the narrative/tone. For the base/median case anchor to the actuals; do not let management's optimism inflate the neutral case. Reserve upside framing for the explicitly bullish scenarios only.
+${body}\n`;
+}
+
+function buildPrompt(p, passages, research, releases) {
   const varLines = p.variables
     .map((v) => {
       const base = p.baseValues?.[v.id];
@@ -115,7 +126,7 @@ ${varLines}
 
 ALTERNATIVE SCENARIOS TO EVALUATE:
 ${scenarioLines}
-${ragBlock(passages)}${webBlock(research)}
+${ragBlock(passages)}${webBlock(research)}${earningsBlock(releases)}
 For each scenario, provide your own estimate for EVERY input variable above, adjusting the median figures for that scenario's conditions and keeping units/magnitudes consistent. Then call submit_scenarios exactly once with all scenarios, including a short justification per variable.`;
 }
 
@@ -175,12 +186,22 @@ router.post("/run", requireAuth, async (req, res) => {
       }
     }
 
+    // Ground in the last two quarterly earnings press releases (SEC, best-effort).
+    let releases = [];
+    if (payload.ticker) {
+      try {
+        releases = await earningsReleases(payload.ticker, 2);
+      } catch (e) {
+        console.warn("Earnings-release fetch failed (continuing without):", e.message);
+      }
+    }
+
     const message = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 8000,
       tools: [submitTool],
       tool_choice: { type: "tool", name: "submit_scenarios" },
-      messages: [{ role: "user", content: buildPrompt(payload, passages, research) }],
+      messages: [{ role: "user", content: buildPrompt(payload, passages, research, releases) }],
     });
 
     const toolUse = message.content.find((b) => b.type === "tool_use");

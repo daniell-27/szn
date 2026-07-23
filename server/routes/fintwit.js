@@ -9,10 +9,22 @@ const router = Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MODEL = process.env.MODEL || "claude-opus-4-8";
 const MOCK = process.env.MOCK === "1";
-const BEARER = process.env.X_BEARER_TOKEN; // paid X/Twitter API bearer token
+const BEARER = process.env.X_BEARER_TOKEN; // paid X/Twitter API bearer token (recent search, 7-day window)
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
-export const fintwitEnabled = !!BEARER || MOCK;
+// Optional third-party historical provider. X's own /search/all (full archive)
+// is Enterprise-only (~$42K/mo), so to reach back months we support a cheaper
+// third-party search API behind env vars. Default request/response mapping
+// targets a twitterapi.io-style advanced-search endpoint; adjust FINTWIT_ARCHIVE_*
+// for a different provider. When unset, we fall back to X recent search (7 days).
+const ARCHIVE_KEY = process.env.FINTWIT_ARCHIVE_KEY;
+const ARCHIVE_URL = process.env.FINTWIT_ARCHIVE_URL || "https://api.twitterapi.io/twitter/tweet/advanced_search";
+const ARCHIVE_ENABLED = !!ARCHIVE_KEY;
+// How far back to consider a post "current". Archive provider defaults to 180
+// days; plain X recent search is hard-capped at 7 by the API regardless.
+const LOOKBACK_DAYS = Math.max(1, parseInt(process.env.FINTWIT_LOOKBACK_DAYS || (ARCHIVE_ENABLED ? "180" : "7"), 10));
+
+export const fintwitEnabled = !!BEARER || ARCHIVE_ENABLED || MOCK;
 
 // Curated accounts: env override, else the config file.
 function curatedAccounts() {
@@ -27,14 +39,25 @@ function curatedAccounts() {
   }
 }
 
-// Query the X API recent-search for tweets from the curated accounts that
-// mention the company/ticker, grouped by author.
-async function fetchFromX(symbol, company) {
-  const accounts = curatedAccounts().slice(0, 20);
-  if (!accounts.length) return [];
-  const from = accounts.map((a) => `from:${a}`).join(" OR ");
-  const mention = [symbol, company].filter(Boolean).map((t) => `"${t}"`).join(" OR ");
-  const query = `(${from})${mention ? ` (${mention})` : ""} -is:retweet`;
+// Relevance clause: match the cashtag ($TSLA), the bare ticker, and the company
+// name. Cashtags are how Fintwit accounts actually reference stocks, so matching
+// only the plain name/ticker (the old behavior) missed most relevant posts.
+function mentionClause(symbol, company) {
+  const terms = [];
+  if (symbol) terms.push(`$${symbol}`, symbol);
+  if (company) terms.push(`"${company}"`);
+  return terms.length ? ` (${terms.join(" OR ")})` : "";
+}
+
+function fromClause(accounts) {
+  return `(${accounts.map((a) => `from:${a}`).join(" OR ")})`;
+}
+
+const sinceDate = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+// ---- X recent search (7-day window) ----
+async function fetchRecent(accounts, symbol, company) {
+  const query = `${fromClause(accounts)}${mentionClause(symbol, company)} -is:retweet`;
   const url = new URL("https://api.twitter.com/2/tweets/search/recent");
   url.searchParams.set("query", query);
   url.searchParams.set("max_results", "50");
@@ -46,17 +69,57 @@ async function fetchFromX(symbol, company) {
   if (!res.ok) throw new Error(`X API error (HTTP ${res.status}). ${res.status === 429 ? "Rate limit reached." : ""}`);
   const data = await res.json();
   const users = new Map((data.includes?.users || []).map((u) => [u.id, u]));
+  return (data.data || [])
+    .map((t) => {
+      const u = users.get(t.author_id);
+      return u ? { username: u.username, name: u.name, text: t.text } : null;
+    })
+    .filter(Boolean);
+}
+
+// ---- third-party historical search (up to LOOKBACK_DAYS) ----
+async function fetchArchive(accounts, symbol, company) {
+  const query = `${fromClause(accounts)}${mentionClause(symbol, company)} -filter:retweets since:${sinceDate(LOOKBACK_DAYS)}`;
+  const url = new URL(ARCHIVE_URL);
+  url.searchParams.set("query", query);
+  url.searchParams.set("queryType", "Latest");
+
+  const res = await fetch(url, { headers: { "X-API-Key": ARCHIVE_KEY, Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Fintwit archive provider error (HTTP ${res.status}).`);
+  const data = await res.json();
+  const tweets = data.tweets || data.data || [];
+  return tweets
+    .map((t) => {
+      const username = t.author?.userName || t.author?.username || t.username;
+      const name = t.author?.name || t.name || username;
+      const text = t.text || t.full_text || "";
+      return username && text ? { username, name, text } : null;
+    })
+    .filter(Boolean);
+}
+
+// Group flat tweets by author, most-active first, cap the payload size.
+function groupByAuthor(tweets) {
   const byAuthor = new Map();
-  for (const t of data.data || []) {
-    const u = users.get(t.author_id);
-    if (!u) continue;
-    if (!byAuthor.has(u.username)) byAuthor.set(u.username, { handle: u.username, name: u.name, tweets: [] });
-    byAuthor.get(u.username).tweets.push(t.text);
+  for (const t of tweets) {
+    if (!byAuthor.has(t.username)) byAuthor.set(t.username, { handle: t.username, name: t.name, tweets: [] });
+    byAuthor.get(t.username).tweets.push(t.text);
   }
   return [...byAuthor.values()]
     .sort((a, b) => b.tweets.length - a.tweets.length)
     .slice(0, 5)
     .map((i) => ({ ...i, tweets: i.tweets.slice(0, 6) }));
+}
+
+// Query whichever source is configured (archive preferred for reach) for tweets
+// from the curated accounts about the company, grouped by author.
+async function fetchInfluencers(symbol, company) {
+  const accounts = curatedAccounts().slice(0, 20);
+  if (!accounts.length) return [];
+  const tweets = ARCHIVE_ENABLED
+    ? await fetchArchive(accounts, symbol, company)
+    : await fetchRecent(accounts, symbol, company);
+  return groupByAuthor(tweets);
 }
 
 function mockInfluencers(symbol) {
@@ -72,9 +135,10 @@ router.get("/fintwit", requireAuth, async (req, res) => {
   const company = String(req.query.company || "").trim();
   try {
     if (MOCK) return res.json({ influencers: mockInfluencers(symbol || "COST") });
-    if (!BEARER) return res.status(400).json({ error: "No X_BEARER_TOKEN configured for the Fintwit feature." });
+    if (!BEARER && !ARCHIVE_ENABLED)
+      return res.status(400).json({ error: "No X_BEARER_TOKEN or FINTWIT_ARCHIVE_KEY configured for the Fintwit feature." });
     if (!symbol && !company) return res.json({ influencers: [] });
-    res.json({ influencers: await fetchFromX(symbol, company) });
+    res.json({ influencers: await fetchInfluencers(symbol, company), lookbackDays: LOOKBACK_DAYS });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

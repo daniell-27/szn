@@ -59,7 +59,7 @@ connectDB()
   .then(() => {
     app.listen(PORT, () => {
       console.log(
-        `Fermi server on http://localhost:${PORT}  (model: ${runtimeInfo.model}, key: ${runtimeInfo.hasKey ? "set" : "MISSING"}${runtimeInfo.mock ? ", MOCK" : ""})`
+        `SZN server on http://localhost:${PORT}  (model: ${runtimeInfo.model}, key: ${runtimeInfo.hasKey ? "set" : "MISSING"}${runtimeInfo.mock ? ", MOCK" : ""})`
       );
     });
   })

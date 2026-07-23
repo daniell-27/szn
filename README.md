@@ -1,4 +1,4 @@
-# Fermi
+# SZN
 
 Back-of-the-envelope company valuations with AI-assisted scenario analysis.
 

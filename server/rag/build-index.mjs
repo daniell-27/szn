@@ -54,7 +54,7 @@ async function main() {
     }
     const mongoose = (await import("mongoose")).default;
     const RagChunk = (await import("../models/RagChunk.js")).default;
-    await mongoose.connect(process.env.MONGODB_URI, { dbName: "fermi" });
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "szn" });
     await RagChunk.deleteMany({});
     // insert in batches to stay under document/BSON limits
     for (let i = 0; i < records.length; i += 200) {

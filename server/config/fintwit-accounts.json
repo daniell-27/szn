@@ -1,11 +1,19 @@
 {
-  "_comment": "Your curated list of trusted Fintwit accounts (X/Twitter handles, no @). Fermi shows the ones who've recently posted about the company you're valuing. Edit this list, or override it with the FINTWIT_ACCOUNTS env var (comma-separated).",
+  "_comment": "Your curated list of trusted Fintwit accounts (X/Twitter handles, no @). SZN shows the ones who've recently posted about the company you're valuing. Edit this list, or override it with the FINTWIT_ACCOUNTS env var (comma-separated).",
   "accounts": [
     "GavinSBaker",
     "RihardJarc",
     "michaeljburry",
     "CliffordAsness",
     "htsfhickey",
-    "SamanthaMcLemor"
+    "SamanthaMcLemor",
+    "stevehou",
+    "skgoodwin23",
+    "techfund1",
+    "Speedwell_LLC",
+    "markoinny",
+    "IvanaSpear",
+    "TMTBreakout",
+    "tsaicapital"
   ]
 }

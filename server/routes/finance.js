@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { fundamentals as secFundamentals } from "../lib/sec.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -8,6 +9,10 @@ const KEY = process.env.FMP_API_KEY;
 const MOCK = process.env.MOCK === "1";
 const HOST = "https://financialmodelingprep.com";
 
+// Hybrid model: SEC EDGAR (free, primary-source filings) supplies fundamentals;
+// FMP supplies company search + market data SEC has no access to (price, market
+// cap, P/E, enterprise value). The metrics endpoint merges the two. Fundamentals
+// still work if FMP is down; market metrics need FMP.
 export const financeEnabled = !!KEY || MOCK;
 
 // One FMP GET. Throws the API's own error message (so it reaches the UI) rather
@@ -92,11 +97,6 @@ const pick = (obj, map) =>
     .map(([field, label]) => ({ label, value: obj?.[field] }))
     .filter((m) => typeof m.value === "number" && Number.isFinite(m.value));
 
-async function statement(kind, symbol) {
-  const enc = encodeURIComponent(symbol);
-  const rows = await tryEndpoints([`/stable/${kind}?symbol=${enc}&limit=1`, `/api/v3/${kind}/${enc}?limit=1`]).catch(() => null);
-  return (Array.isArray(rows) ? rows[0] : rows) || {};
-}
 async function single(kind, symbol) {
   const enc = encodeURIComponent(symbol);
   const rows = await tryEndpoints([`/stable/${kind}?symbol=${enc}`, `/api/v3/${kind}/${enc}`]).catch(() => null);
@@ -123,34 +123,28 @@ router.get("/finance/metrics", async (req, res) => {
         ],
       });
     }
-    if (!KEY) return res.status(400).json({ error: "No FMP_API_KEY configured on the server." });
-
-    const [i, c, b, k, p] = await Promise.all([
-      statement("income-statement", symbol),
-      statement("cash-flow-statement", symbol),
-      statement("balance-sheet-statement", symbol),
-      single("key-metrics-ttm", symbol),
-      single("profile", symbol),
+    // Fundamentals from SEC (primary source); market data from FMP (if keyed).
+    // Both are best-effort so one source being down still returns the other.
+    const [secRows, k, p] = await Promise.all([
+      secFundamentals(symbol).catch(() => []),
+      KEY ? single("key-metrics-ttm", symbol).catch(() => ({})) : Promise.resolve({}),
+      KEY ? single("profile", symbol).catch(() => ({})) : Promise.resolve({}),
     ]);
 
-    const metrics = [
-      ...pick(i, {
-        revenue: "Revenue", grossProfit: "Gross Profit", operatingIncome: "Operating Income",
-        netIncome: "Net Income", ebitda: "EBITDA", eps: "EPS",
-        weightedAverageShsOutDil: "Diluted Shares Outstanding", weightedAverageShsOut: "Shares Outstanding",
-      }),
-      ...pick(c, { freeCashFlow: "Free Cash Flow", operatingCashFlow: "Operating Cash Flow", capitalExpenditure: "CapEx" }),
-      ...pick(b, { totalDebt: "Total Debt", cashAndCashEquivalents: "Cash & Equivalents", totalStockholdersEquity: "Total Equity" }),
+    const marketMetrics = [
       ...pick(k, {
         peRatioTTM: "P/E (TTM)", priceToEarningsRatioTTM: "P/E (TTM)",
-        freeCashFlowPerShareTTM: "FCF / Share (TTM)", enterpriseValueTTM: "Enterprise Value",
+        enterpriseValueTTM: "Enterprise Value",
       }),
       ...pick(p, { mktCap: "Market Cap", marketCap: "Market Cap", price: "Share Price" }),
     ];
-    // dedupe by label (in case stable + legacy both matched)
+
+    // SEC fundamentals first (authoritative), then FMP market metrics; dedupe by label.
     const byLabel = new Map();
-    for (const m of metrics) if (!byLabel.has(m.label)) byLabel.set(m.label, m);
-    res.json({ symbol, metrics: [...byLabel.values()] });
+    for (const m of [...secRows, ...marketMetrics]) if (!byLabel.has(m.label)) byLabel.set(m.label, m);
+    const metrics = [...byLabel.values()];
+    if (!metrics.length) return res.status(502).json({ error: "No metrics found for this symbol (SEC + FMP both empty)." });
+    res.json({ symbol, metrics });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

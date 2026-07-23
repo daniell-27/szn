@@ -3,7 +3,7 @@
 # secret env vars (ANTHROPIC_API_KEY, MONGODB_URI) before the first deploy.
 services:
   - type: web
-    name: fermi
+    name: szn
     runtime: node
     plan: free
     buildCommand: npm run build
@@ -19,6 +19,14 @@ services:
       - key: MONGODB_URI
         sync: false # your MongoDB Atlas connection string (secret)
       - key: FMP_API_KEY
-        sync: false # Financial Modeling Prep key for company search + metrics (secret)
+        sync: false # Financial Modeling Prep key for company search + market data (secret)
+      - key: SEC_USER_AGENT
+        sync: false # required by SEC EDGAR: "AppName contact@email" (fundamentals + earnings)
       - key: X_BEARER_TOKEN
-        sync: false # X/Twitter API bearer token for the Fintwit feature (secret, optional)
+        sync: false # X/Twitter API bearer token, Fintwit recent search / 7-day (secret, optional)
+      - key: FINTWIT_ARCHIVE_KEY
+        sync: false # third-party historical-tweet API key for ~6-month Fintwit reach (optional)
+      - key: FINTWIT_ARCHIVE_URL
+        sync: false # archive provider search endpoint (optional; defaults to twitterapi.io)
+      - key: FINTWIT_LOOKBACK_DAYS
+        sync: false # how far back Fintwit looks; default 180 with archive key, else 7 (optional)

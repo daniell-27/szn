@@ -15,9 +15,9 @@ export default function Sidebar({ user, history, activeRunId, onLoad, onDelete, 
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <img src="/fermi.jpg" alt="Enrico Fermi" className="logo" />
+        <div className="logo-mark" aria-hidden="true">szn<span className="logo-dot">.</span></div>
         <div>
-          <div className="brand">Fermi</div>
+          <div className="brand">SZN</div>
           <div className="brand-sub">back-of-the-envelope</div>
         </div>
       </div>

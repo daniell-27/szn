@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Icon from "./Icon.jsx";
 import * as api from "../lib/api.js";
 
@@ -21,6 +21,14 @@ export default function ScenarioSources({ health, context, addedHandles, onAddSc
   if (!showFintwit && !showArticle) return null;
 
   const hasCompany = !!context.ticker || !!context.company;
+
+  // Refetch keys on the selected company so switching companies doesn't show a
+  // previous company's cached influencers (or a stale "none found").
+  const companyKey = `${context.ticker || ""}|${context.company || ""}`;
+  useEffect(() => {
+    setInfluencers(null);
+    setFtError("");
+  }, [companyKey]);
 
   async function openFintwit() {
     const next = !ftOpen;

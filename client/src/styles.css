@@ -38,7 +38,18 @@ body {
   overflow-y: auto;
 }
 .sidebar-head { display: flex; align-items: center; gap: 10px; }
-.logo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; box-shadow: var(--shadow); border: 1px solid var(--line); }
+/* "szn." wordmark badge: white bold text on a dark chip, legible on the light
+   manila UI and reusable as a favicon glyph. */
+.logo-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 11px;
+  background: #14110b; color: #fff; box-shadow: var(--shadow);
+  font-weight: 800; font-size: 17px; letter-spacing: -0.03em; line-height: 1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  user-select: none;
+}
+.logo-mark-lg { width: 84px; height: 84px; border-radius: 20px; font-size: 32px; align-self: center; }
+.logo-dot { color: var(--twine); }
 .brand { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
 .brand-sub { font-size: 11px; color: var(--ink-soft); font-style: italic; }
 .sidebar-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-soft); margin-top: 6px; }
@@ -65,7 +76,7 @@ body {
   border-radius: 10px; box-shadow: 0 8px 30px rgba(60,45,20,0.25);
   padding: 28px 26px; display: flex; flex-direction: column; gap: 12px; align-items: stretch;
 }
-.auth-logo { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; align-self: center; box-shadow: var(--shadow); border: 2px solid var(--line); }
+.auth-logo { align-self: center; }
 .auth-brand { text-align: center; font-size: 28px; font-weight: 700; letter-spacing: 0.5px; }
 .auth-sub { text-align: center; font-size: 12px; font-style: italic; color: var(--ink-soft); margin-top: -8px; margin-bottom: 4px; }
 .auth-tabs { display: flex; gap: 6px; background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }

@@ -233,7 +233,7 @@ export default function App() {
 
   // ---- render ----
   if (checkingAuth) {
-    return <div className="splash">Loading Fermi…</div>;
+    return <div className="splash">Loading SZN…</div>;
   }
   if (!user) {
     return <AuthScreen onAuthed={setUser} />;

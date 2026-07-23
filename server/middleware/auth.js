@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 
 const DEFAULT_DEV_SECRET = "dev-insecure-secret-change-me";
 export const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_DEV_SECRET;
-const COOKIE = "fermi_token";
+const COOKIE = "szn_token";
 
 // Never run production with the insecure default (tokens would be forgeable).
 if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || JWT_SECRET === DEFAULT_DEV_SECRET)) {
